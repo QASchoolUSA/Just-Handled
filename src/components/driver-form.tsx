@@ -33,6 +33,7 @@ import type { Driver } from '@/lib/types';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+  unitId: z.string().optional(),
   payType: z.enum(['percentage', 'cpm']),
   rate: z.coerce.number().min(0, { message: 'Rate must be a positive number.' }),
   insurance: z.coerce.number().min(0).default(0),
@@ -53,6 +54,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
+      unitId: '',
       payType: 'percentage',
       rate: 0,
       insurance: 0,
@@ -64,6 +66,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
     if (driver) {
       form.reset({
         name: driver.name,
+        unitId: driver.unitId || '',
         payType: driver.payType,
         rate: driver.rate,
         insurance: driver.recurringDeductions.insurance,
@@ -72,6 +75,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
     } else {
       form.reset({
         name: '',
+        unitId: '',
         payType: 'percentage',
         rate: 0.25,
         insurance: 0,
@@ -95,19 +99,34 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Driver Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="John Doe" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Driver Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="John Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="unitId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Unit ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. 101" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -145,7 +164,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-               <FormField
+              <FormField
                 control={form.control}
                 name="insurance"
                 render={({ field }) => (
@@ -158,7 +177,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="escrow"
                 render={({ field }) => (

@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
-import { PlusCircle, MoreHorizontal } from 'lucide-react';
+import React, { useRef } from 'react';
+import { PlusCircle, MoreHorizontal, Download, Upload, FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -47,11 +48,82 @@ export default function DriversPage() {
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadTemplate = () => {
+    const csvData = [
+      ['Name', 'Unit ID', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)'],
+      ['John Doe', '101', 'percentage', '0.25', '100', '50'],
+      ['Jane Smith', '102', 'cpm', '0.65', '150', '0']
+    ];
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'driver_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        if (results.data && firestore && driversCollection) {
+          const importedDrivers = results.data as any[];
+          let successCount = 0;
+
+          for (const row of importedDrivers) {
+            // Basic validation
+            if (!row['Name'] || !row['Pay Type (percentage/cpm)']) continue;
+
+            const payType = row['Pay Type (percentage/cpm)'].toLowerCase() === 'cpm' ? 'cpm' : 'percentage';
+            const rate = parseFloat(row['Rate']) || 0;
+            const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
+            const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
+
+            const newDriver = {
+              name: row['Name'],
+              unitId: row['Unit ID'] || undefined,
+              payType,
+              rate,
+              recurringDeductions: {
+                insurance,
+                escrow,
+              },
+            };
+
+            await addDocumentNonBlocking(driversCollection, newDriver);
+            successCount++;
+          }
+          alert(`Successfully imported ${successCount} drivers.`);
+          // Reset file input
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      },
+      error: (error) => {
+        console.error('Error parsing CSV:', error);
+        alert('Error parsing CSV file. Please check the format.');
+      }
+    });
+  };
+
   const handleFormSave = async (driverData: Omit<Driver, 'id' | 'recurringDeductions'> & { insurance: number; escrow: number }) => {
     if (!firestore) return;
 
     const dataToSave = {
       name: driverData.name,
+      unitId: driverData.unitId,
       payType: driverData.payType,
       rate: driverData.rate,
       recurringDeductions: {
@@ -80,9 +152,24 @@ export default function DriversPage() {
           <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Driver Profiles</h1>
           <p className="text-muted-foreground text-lg">Manage your drivers and their pay structures.</p>
         </div>
-        <Button onClick={handleAddDriver} className="rounded-xl shadow-sm hover:shadow-md transition-all">
-          <PlusCircle className="mr-2 h-4 w-4" /> Add Driver
-        </Button>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleImportFile}
+          />
+          <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl">
+            <Download className="mr-2 h-4 w-4" /> Template
+          </Button>
+          <Button variant="outline" onClick={handleImportClick} className="rounded-xl">
+            <Upload className="mr-2 h-4 w-4" /> Import CSV
+          </Button>
+          <Button onClick={handleAddDriver} className="rounded-xl shadow-sm hover:shadow-md transition-all">
+            <PlusCircle className="mr-2 h-4 w-4" /> Add Driver
+          </Button>
+        </div>
       </div>
 
       <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
@@ -95,6 +182,7 @@ export default function DriversPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-6">Driver</TableHead>
+                <TableHead>Unit ID</TableHead>
                 <TableHead>Pay Type</TableHead>
                 <TableHead>Rate</TableHead>
                 <TableHead>Deductions</TableHead>
@@ -122,6 +210,9 @@ export default function DriversPage() {
                         </Avatar>
                         <span>{driver.name}</span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {driver.unitId ? <Badge variant="outline" className="font-mono">{driver.unitId}</Badge> : <span className="text-muted-foreground text-sm">-</span>}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-medium">{driver.payType}</Badge>

@@ -56,20 +56,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               const isActive = pathname === item.href;
               return (
                 <SidebarMenuItem key={item.href}>
-                  <Link href={item.href} passHref legacyBehavior>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      tooltip={item.label}
-                      size="lg"
-                      className={`transition-all duration-200 ease-in-out font-medium rounded-xl h-12 ${isActive
-                        ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary'
-                        : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
-                        }`}
-                    >
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    tooltip={item.label}
+                    size="lg"
+                    className={`transition-all duration-200 ease-in-out font-medium rounded-xl h-12 ${isActive
+                      ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary'
+                      : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                      }`}
+                  >
+                    <Link href={item.href}>
                       <item.icon className={isActive ? 'text-primary' : 'text-muted-foreground'} />
                       <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </Link>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               )
             })}

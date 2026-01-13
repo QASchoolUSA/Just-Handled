@@ -3,6 +3,7 @@ export type WithId<T> = T & { id: string };
 export type Driver = {
   id: string;
   name: string;
+  unitId?: string;
   payType: 'percentage' | 'cpm';
   rate: number;
   recurringDeductions: {
