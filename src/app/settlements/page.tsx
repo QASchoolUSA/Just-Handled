@@ -67,21 +67,25 @@ export default function SettlementsPage() {
   };
   const handleDeleteLoad = async (loadId: string) => {
     if (firestore && confirm('Are you sure you want to delete this load?')) {
-       deleteDocumentNonBlocking(doc(firestore, 'loads', loadId));
+      deleteDocumentNonBlocking(doc(firestore, 'loads', loadId));
     }
   };
   const handleSaveLoad = async (loadData: Omit<Load, 'id'>) => {
     // This is a temporary setup. File upload logic will replace this.
-    // For now, we save the form data without actual URLs.
-    const dataToSave = { ...loadData };
+    // Ensure undefined values are converted to null for Firestore
+    const dataToSave = {
+      ...loadData,
+      proofOfDeliveryUrl: loadData.proofOfDeliveryUrl || null,
+      rateConfirmationUrl: loadData.rateConfirmationUrl || null,
+    };
 
     if (firestore && loadsCollection) {
-        if (editingLoad) {
-            const loadDoc = doc(firestore, 'loads', editingLoad.id);
-            setDocumentNonBlocking(loadDoc, dataToSave, { merge: true });
-        } else {
-            addDocumentNonBlocking(loadsCollection, dataToSave);
-        }
+      if (editingLoad) {
+        const loadDoc = doc(firestore, 'loads', editingLoad.id);
+        setDocumentNonBlocking(loadDoc, dataToSave, { merge: true });
+      } else {
+        addDocumentNonBlocking(loadsCollection, dataToSave);
+      }
     }
     setIsLoadFormOpen(false);
   };
@@ -101,7 +105,7 @@ export default function SettlementsPage() {
     }
   };
   const handleSaveExpense = async (expenseData: Omit<Expense, 'id'>) => {
-     if (!firestore || !expensesCollection) return;
+    if (!firestore || !expensesCollection) return;
     if (editingExpense) {
       setDocumentNonBlocking(doc(firestore, 'expenses', editingExpense.id), expenseData, { merge: true });
     } else {
@@ -141,7 +145,7 @@ export default function SettlementsPage() {
         if (driver.payType === 'percentage') {
           loadPay = load.linehaul * driver.rate;
         } else {
-           if (load.miles) {
+          if (load.miles) {
             loadPay = load.miles * driver.rate;
           }
         }
@@ -195,7 +199,7 @@ export default function SettlementsPage() {
     // 1. Factoring Entry
     const totalRevenue = loads.reduce((sum, l) => sum + l.linehaul + l.fuelSurcharge, 0);
     const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
-    
+
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.factoringClearing, Debits: totalRevenue - totalFactoringFees, Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.factoringFees, Debits: totalFactoringFees, Credits: '', Name: '', Description: 'Weekly factoring fees' });
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: 'Accounts Receivable', Debits: '', Credits: totalRevenue, Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
@@ -213,19 +217,19 @@ export default function SettlementsPage() {
         if (deduction.amount <= 0) return;
         let creditAccount = '';
         if (deduction.description.toLowerCase().includes('insurance')) {
-           // Assuming insurance is paid out from a specific payable account
+          // Assuming insurance is paid out from a specific payable account
         } else if (deduction.description.toLowerCase().includes('escrow')) {
           creditAccount = accounts.escrowPayable;
         } else if (deduction.description.toLowerCase().includes('fuel') || deduction.description.toLowerCase().includes('advance')) {
-           creditAccount = accounts.fuelAdvancesReceivable;
+          creditAccount = accounts.fuelAdvancesReceivable;
         } else {
-            // Other deductions might go to a general 'Deductions Payable' or similar
+          // Other deductions might go to a general 'Deductions Payable' or similar
         }
 
         if (creditAccount) { // Only create entry if we have a defined credit account
-            journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.accruedDriverPay, Debits: deduction.amount, Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
-            journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: creditAccount, Debits: '', Credits: deduction.amount, Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
-            journalNo++;
+          journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.accruedDriverPay, Debits: deduction.amount, Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
+          journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: creditAccount, Debits: '', Credits: deduction.amount, Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
+          journalNo++;
         }
       });
     });
@@ -248,12 +252,12 @@ export default function SettlementsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-            <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0}>
-                <FileDown className="mr-2 h-4 w-4" /> Export Invoices (CSV)
-            </Button>
-            <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0}>
-                <FileDown className="mr-2 h-4 w-4" /> Export Journal (CSV)
-            </Button>
+          <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0}>
+            <FileDown className="mr-2 h-4 w-4" /> Export Invoices (CSV)
+          </Button>
+          <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0}>
+            <FileDown className="mr-2 h-4 w-4" /> Export Journal (CSV)
+          </Button>
         </div>
       </div>
 
@@ -263,7 +267,7 @@ export default function SettlementsPage() {
           <TabsTrigger value="expenses">Expenses ({expenses?.length || 0})</TabsTrigger>
           <TabsTrigger value="summary">Settlement Summary ({settlementSummary.length})</TabsTrigger>
         </TabsList>
-        
+
         {/* Loads Tab */}
         <TabsContent value="loads">
           <Card>
@@ -324,7 +328,7 @@ export default function SettlementsPage() {
                                     </div>
                                   )}
                                   {load.rateConfirmationUrl && (
-                                     <div>
+                                    <div>
                                       <h4 className="font-semibold mb-2">Rate Confirmation</h4>
                                       <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
                                         View Rate Con
@@ -337,7 +341,7 @@ export default function SettlementsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                           <DropdownMenu>
+                          <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button aria-haspopup="true" size="icon" variant="ghost">
                                 <MoreHorizontal className="h-4 w-4" />
@@ -368,12 +372,12 @@ export default function SettlementsPage() {
             <CardHeader>
               <CardTitle>Weekly Expenses & Deductions</CardTitle>
               <CardDescription>Company expenses and driver-specific deductions.</CardDescription>
-               <Button onClick={handleAddExpense} size="sm" className="absolute top-4 right-4">
+              <Button onClick={handleAddExpense} size="sm" className="absolute top-4 right-4">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
               </Button>
             </CardHeader>
             <CardContent>
-               <Table>
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
@@ -396,7 +400,7 @@ export default function SettlementsPage() {
                         <TableCell>{expense.driverId ? driverMap.get(expense.driverId)?.name : 'N/A'}</TableCell>
                         <TableCell>{formatCurrency(expense.amount)}</TableCell>
                         <TableCell>
-                           <DropdownMenu>
+                          <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button aria-haspopup="true" size="icon" variant="ghost">
                                 <MoreHorizontal className="h-4 w-4" />
@@ -423,60 +427,60 @@ export default function SettlementsPage() {
 
         {/* Summary Tab */}
         <TabsContent value="summary">
-            {settlementSummary.map(summary => (
-              <Card key={summary.driverId} className="mb-6">
-                <CardHeader>
-                    <CardTitle>{summary.driverName}'s Settlement</CardTitle>
-                    <CardDescription>
-                        Summary of pay and deductions for this period.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-3 gap-4 text-center mb-6 border-b pb-4">
-                        <div>
-                            <p className="text-sm text-muted-foreground">Gross Pay</p>
-                            <p className="text-2xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-muted-foreground">Total Deductions</p>
-                            <p className="text-2xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-muted-foreground">Net Pay</p>
-                            <p className="text-2xl font-bold">{formatCurrency(summary.netPay)}</p>
-                        </div>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-8">
-                        <div>
-                            <h4 className="font-semibold mb-2">Loads ({summary.loads.length})</h4>
-                            <Table>
-                                <TableHeader><TableRow><TableHead>Load #</TableHead><TableHead>Linehaul</TableHead><TableHead>Miles</TableHead></TableRow></TableHeader>
-                                <TableBody>
-                                    {summary.loads.map(l => <TableRow key={l.id}><TableCell>{l.loadNumber}</TableCell><TableCell>{formatCurrency(l.linehaul)}</TableCell><TableCell>{l.miles}</TableCell></TableRow>)}
-                                </TableBody>
-                            </Table>
-                        </div>
-                         <div>
-                            <h4 className="font-semibold mb-2">Deductions ({summary.deductions.length})</h4>
-                             <Table>
-                                <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Amount</TableHead></TableRow></TableHeader>
-                                <TableBody>
-                                    {summary.deductions.map(d => <TableRow key={d.id}><TableCell>{d.description}</TableCell><TableCell>{formatCurrency(d.amount)}</TableCell></TableRow>)}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </div>
-                </CardContent>
-              </Card>  
-            ))}
-             {settlementSummary.length === 0 && (
-                <div className="flex items-center justify-center h-64 border-2 border-dashed rounded-lg">
-                    <div className="text-center">
-                        <h2 className="text-2xl font-semibold">No data yet</h2>
-                        <p className="text-muted-foreground">Add loads and expenses to see the settlement summary.</p>
-                    </div>
+          {settlementSummary.map(summary => (
+            <Card key={summary.driverId} className="mb-6">
+              <CardHeader>
+                <CardTitle>{summary.driverName}'s Settlement</CardTitle>
+                <CardDescription>
+                  Summary of pay and deductions for this period.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 text-center mb-6 border-b pb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Gross Pay</p>
+                    <p className="text-2xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Deductions</p>
+                    <p className="text-2xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Net Pay</p>
+                    <p className="text-2xl font-bold">{formatCurrency(summary.netPay)}</p>
+                  </div>
                 </div>
-             )}
+                <div className="grid md:grid-cols-2 gap-8">
+                  <div>
+                    <h4 className="font-semibold mb-2">Loads ({summary.loads.length})</h4>
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Load #</TableHead><TableHead>Linehaul</TableHead><TableHead>Miles</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {summary.loads.map(l => <TableRow key={l.id}><TableCell>{l.loadNumber}</TableCell><TableCell>{formatCurrency(l.linehaul)}</TableCell><TableCell>{l.miles}</TableCell></TableRow>)}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-2">Deductions ({summary.deductions.length})</h4>
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Amount</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {summary.deductions.map(d => <TableRow key={d.id}><TableCell>{d.description}</TableCell><TableCell>{formatCurrency(d.amount)}</TableCell></TableRow>)}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {settlementSummary.length === 0 && (
+            <div className="flex items-center justify-center h-64 border-2 border-dashed rounded-lg">
+              <div className="text-center">
+                <h2 className="text-2xl font-semibold">No data yet</h2>
+                <p className="text-muted-foreground">Add loads and expenses to see the settlement summary.</p>
+              </div>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
