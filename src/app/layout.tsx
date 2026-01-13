@@ -5,7 +5,7 @@ import AppLayout from '@/components/app-layout';
 import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata: Metadata = {
-  title: 'Trucking Financial Bridge',
+  title: 'Just Handled',
   description: 'Bridge the gap between Operations and Accounting.',
 };
 

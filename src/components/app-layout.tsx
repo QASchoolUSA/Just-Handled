@@ -44,7 +44,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden text-left">
               <span className="font-display text-lg font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                Financial Bridge
+                Just Handled
               </span>
               <span className="text-xs text-muted-foreground font-medium">Trucking OS</span>
             </div>
@@ -62,8 +62,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       tooltip={item.label}
                       size="lg"
                       className={`transition-all duration-200 ease-in-out font-medium rounded-xl h-12 ${isActive
-                          ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary'
-                          : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                        ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary'
+                        : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
                         }`}
                     >
                       <item.icon className={isActive ? 'text-primary' : 'text-muted-foreground'} />
@@ -85,7 +85,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Truck className="h-5 w-5" />
             </div>
             <h1 className="font-display text-lg font-bold">
-              Financial Bridge
+              Just Handled
             </h1>
           </div>
         </header>
