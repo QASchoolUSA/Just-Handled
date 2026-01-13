@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import { PlusCircle, MoreHorizontal, FileDown, Paperclip } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -240,6 +240,151 @@ export default function SettlementsPage() {
     downloadCsv(csv, `QBO_Journal_${today}.csv`);
   };
 
+  // --- CSV Import Helpers ---
+  const loadFileInputRef = React.useRef<HTMLInputElement>(null);
+  const expenseFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleGenerateLoadTemplate = () => {
+    const csvData = [
+      ['Load #', 'Driver Name', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Factoring Fee', 'Advance'],
+      ['12345', 'John Doe', '500', '1200.00', '150.00', '35.00', '0.00'],
+      ['67890', 'Jane Smith', '750', '1800.00', '200.00', '45.00', '0.00'],
+    ];
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'load_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportLoadsClick = () => {
+    loadFileInputRef.current?.click();
+  };
+
+  const handleImportLoads = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        if (results.data && firestore && loadsCollection && drivers) {
+          const importedLoads = results.data as any[];
+          let successCount = 0;
+          let failCount = 0;
+
+          for (const row of importedLoads) {
+            if (!row['Load #'] || !row['Driver Name']) continue;
+
+            const driver = drivers.find(d => d.name.toLowerCase() === row['Driver Name'].toLowerCase().trim());
+            if (!driver) {
+              console.warn(`Driver not found for load ${row['Load #']}: ${row['Driver Name']}`);
+              failCount++;
+              continue;
+            }
+
+            const newLoad = {
+              loadNumber: row['Load #'],
+              driverId: driver.id,
+              miles: parseFloat(row['Miles']) || 0,
+              linehaul: parseFloat(row['Linehaul']) || 0,
+              fuelSurcharge: parseFloat(row['Fuel Surcharge']) || 0,
+              factoringFee: parseFloat(row['Factoring Fee']) || 0,
+              advance: parseFloat(row['Advance']) || 0,
+              proofOfDeliveryUrl: null,
+              rateConfirmationUrl: null,
+            };
+
+            await addDocumentNonBlocking(loadsCollection, newLoad);
+            successCount++;
+          }
+          alert(`Imported ${successCount} loads. ${failCount > 0 ? `${failCount} failed (driver not found).` : ''}`);
+          if (loadFileInputRef.current) loadFileInputRef.current.value = '';
+        }
+      },
+      error: (error) => {
+        console.error('Error parsing CSV:', error);
+        alert('Error parsing CSV file.');
+      }
+    });
+  };
+
+  const handleGenerateExpenseTemplate = () => {
+    const csvData = [
+      ['Date', 'Description', 'Type', 'Driver Name', 'Amount'],
+      ['2023-10-01', 'Trailer Repair', 'company', '', '500.00'],
+      ['2023-10-02', 'Fuel Advance', 'driver', 'John Doe', '200.00'],
+    ];
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'expense_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportExpensesClick = () => {
+    expenseFileInputRef.current?.click();
+  };
+
+  const handleImportExpenses = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        if (results.data && firestore && expensesCollection && drivers) {
+          const importedExpenses = results.data as any[];
+          let successCount = 0;
+
+          for (const row of importedExpenses) {
+            if (!row['Description'] || !row['Amount']) continue;
+
+            const type = row['Type']?.toLowerCase() === 'driver' ? 'driver' : 'company';
+            let driverId: string | undefined = undefined;
+
+            if (type === 'driver' && row['Driver Name']) {
+              const driver = drivers.find(d => d.name.toLowerCase() === row['Driver Name'].toLowerCase().trim());
+              if (driver) {
+                driverId = driver.id;
+              } else {
+                // Fallback or warning if driver not found but type is driver
+                console.warn(`Driver not found for expense: ${row['Driver Name']}`);
+              }
+            }
+
+            const newExpense = {
+              date: row['Date'] || new Date().toISOString(),
+              description: row['Description'],
+              amount: parseFloat(row['Amount']) || 0,
+              type,
+              driverId,
+            };
+
+            await addDocumentNonBlocking(expensesCollection, newExpense);
+            successCount++;
+          }
+          alert(`Imported ${successCount} expenses.`);
+          if (expenseFileInputRef.current) expenseFileInputRef.current.value = '';
+        }
+      },
+      error: (error) => {
+        console.error('Error parsing CSV:', error);
+        alert('Error parsing CSV file.');
+      }
+    });
+  };
+
   const isLoading = loadsLoading || expensesLoading || driversLoading;
 
 
@@ -275,9 +420,18 @@ export default function SettlementsPage() {
                 <CardTitle className="font-display">Weekly Loads</CardTitle>
                 <CardDescription>All loads completed this settlement period.</CardDescription>
               </div>
-              <Button onClick={handleAddLoad} size="sm" className="rounded-lg shadow-sm">
-                <PlusCircle className="mr-2 h-4 w-4" /> Add Load
-              </Button>
+              <div className="flex gap-2">
+                <input type="file" accept=".csv" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
+                <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg">
+                  <Download className="mr-2 h-4 w-4" /> Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleImportLoadsClick} className="rounded-lg">
+                  <Upload className="mr-2 h-4 w-4" /> Import CSV
+                </Button>
+                <Button onClick={handleAddLoad} size="sm" className="rounded-lg shadow-sm">
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Load
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -388,9 +542,18 @@ export default function SettlementsPage() {
                 <CardTitle className="font-display">Weekly Expenses & Deductions</CardTitle>
                 <CardDescription>Company expenses and driver-specific deductions.</CardDescription>
               </div>
-              <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm">
-                <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
-              </Button>
+              <div className="flex gap-2">
+                <input type="file" accept=".csv" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
+                <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg">
+                  <Download className="mr-2 h-4 w-4" /> Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleImportExpensesClick} className="rounded-lg">
+                  <Upload className="mr-2 h-4 w-4" /> Import CSV
+                </Button>
+                <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm">
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
