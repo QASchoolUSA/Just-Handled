@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
-import AppLayout from '@/components/app-layout';
+// import AppLayout from '@/components/app-layout'; // handled in AuthWrapper
 import { FirebaseClientProvider } from '@/firebase';
 
 export const metadata: Metadata = {
   title: 'Just Handled',
   description: 'Bridge the gap between Operations and Accounting.',
 };
+
+import AuthWrapper from '@/components/auth-wrapper';
 
 export default function RootLayout({
   children,
@@ -26,7 +28,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased">
         <FirebaseClientProvider>
-          <AppLayout>{children}</AppLayout>
+          <AuthWrapper>{children}</AuthWrapper>
           <Toaster />
         </FirebaseClientProvider>
       </body>
