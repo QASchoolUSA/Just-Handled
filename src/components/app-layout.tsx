@@ -31,6 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/settlements', label: 'Settlements', icon: BookCopy },
     { href: '/drivers', label: 'Drivers', icon: Users },
+    { href: '/owners', label: 'Owners', icon: Users },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 

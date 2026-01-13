@@ -12,6 +12,20 @@ export type Driver = {
   };
 };
 
+export type Owner = {
+  id: string;
+  name: string; // Company Name
+  percentage: number; // e.g. 0.88 for 88%
+  recurringDeductions: {
+    insurance: number;
+    escrow: number;
+    // Add other fixed deductions here if needed
+  };
+  recurringAdditions: {
+    // Add any fixed additions here if needed (e.g. trailer rent credit?)
+  };
+};
+
 export type Load = {
   id: string;
   loadNumber: string;
