@@ -1,0 +1,278 @@
+{
+  "entities": {
+    "DriverProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DriverProfile",
+      "type": "object",
+      "description": "Represents a driver profile with their pay details and recurring deductions.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the driver profile."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the driver."
+        },
+        "payType": {
+          "type": "string",
+          "description": "The pay type of the driver (Percentage or CPM)."
+        },
+        "rate": {
+          "type": "number",
+          "description": "The pay rate of the driver (e.g., 0.30 for 30% or 0.65 for $0.65 CPM)."
+        },
+        "recurringDeductions": {
+          "type": "array",
+          "description": "An array of recurring deduction IDs associated with the driver.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "payType",
+        "rate"
+      ]
+    },
+    "Load": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Load",
+      "type": "object",
+      "description": "Represents a load with associated revenue, fees, and driver.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the load."
+        },
+        "loadNumber": {
+          "type": "string",
+          "description": "The load number (Class in QBO)."
+        },
+        "driverId": {
+          "type": "string",
+          "description": "Reference to DriverProfile. (Relationship: DriverProfile 1:N Load)"
+        },
+        "linehaulRevenue": {
+          "type": "number",
+          "description": "The linehaul revenue for the load."
+        },
+        "fuelSurcharge": {
+          "type": "number",
+          "description": "The fuel surcharge for the load."
+        },
+        "factoringFee": {
+          "type": "number",
+          "description": "The factoring fee for the load."
+        },
+        "advanceAmount": {
+          "type": "number",
+          "description": "The advance amount for the load."
+        },
+        "proofOfDeliveryUrl": {
+            "type": "string",
+            "description": "URL of the proof of delivery document."
+        },
+        "rateConfirmationUrl": {
+            "type": "string",
+            "description": "URL of the rate confirmation document."
+        }
+      },
+      "required": [
+        "id",
+        "loadNumber",
+        "driverId",
+        "linehaulRevenue",
+        "fuelSurcharge",
+        "factoringFee"
+      ]
+    },
+    "RecurringDeduction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RecurringDeduction",
+      "type": "object",
+      "description": "Represents a recurring deduction for a driver (e.g., insurance, escrow).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the recurring deduction."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the deduction (e.g., Insurance, Escrow)."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount of the deduction."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "amount"
+      ]
+    },
+    "Expense": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Expense",
+      "type": "object",
+      "description": "Represents an expense, which can be either a company expense or a driver deduction.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the expense."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date of the expense.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the expense."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount of the expense."
+        },
+        "isDriverDeduction": {
+          "type": "boolean",
+          "description": "Indicates whether the expense is a driver deduction (true) or a company expense (false)."
+        },
+        "driverId": {
+          "type": "string",
+          "description": "Reference to DriverProfile. If it's a driver deduction, this field contains the driver's ID."
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "description",
+        "amount",
+        "isDriverDeduction"
+      ]
+    },
+    "AccountMapping": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AccountMapping",
+      "type": "object",
+      "description": "Stores the mapping between account names used in the application and the corresponding QuickBooks Online chart of accounts.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the account mapping."
+        },
+        "accountName": {
+          "type": "string",
+          "description": "The name of the account in the application (e.g., 'Accrued Driver Pay', 'Factoring Fees')."
+        },
+        "qboAccountName": {
+          "type": "string",
+          "description": "The corresponding account name in QuickBooks Online."
+        }
+      },
+      "required": [
+        "id",
+        "accountName",
+        "qboAccountName"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/drivers/{driverId}",
+        "definition": {
+          "entityName": "DriverProfile",
+          "schema": {
+            "$ref": "#/backend/entities/DriverProfile"
+          },
+          "description": "Stores driver profiles. Each driver has a unique ID. Used for managing driver-specific information like pay type and recurring deductions.",
+          "params": [
+            {
+              "name": "driverId",
+              "description": "Unique identifier for the driver."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/drivers/{driverId}/loads/{loadId}",
+        "definition": {
+          "entityName": "Load",
+          "schema": {
+            "$ref": "#/backend/entities/Load"
+          },
+          "description": "Stores load information associated with a specific driver.  The 'driverId' is denormalized within the load document to ensure authorization independence.  Path based ownership ensures secure 'list' operations.",
+          "params": [
+            {
+              "name": "driverId",
+              "description": "Unique identifier for the driver."
+            },
+            {
+              "name": "loadId",
+              "description": "Unique identifier for the load."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/recurring_deductions/{deductionId}",
+        "definition": {
+          "entityName": "RecurringDeduction",
+          "schema": {
+            "$ref": "#/backend/entities/RecurringDeduction"
+          },
+          "description": "Stores recurring deduction information. Each deduction has a unique ID and is accessible globally.",
+          "params": [
+            {
+              "name": "deductionId",
+              "description": "Unique identifier for the recurring deduction."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/expenses/{expenseId}",
+        "definition": {
+          "entityName": "Expense",
+          "schema": {
+            "$ref": "#/backend/entities/Expense"
+          },
+          "description": "Stores expense information, including company expenses and driver deductions. Includes denormalized 'driverId' to indicate the associated driver, enabling efficient filtering and rule creation without complex `get()` calls.",
+          "params": [
+            {
+              "name": "expenseId",
+              "description": "Unique identifier for the expense."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/account_mappings/{accountId}",
+        "definition": {
+          "entityName": "AccountMapping",
+          "schema": {
+            "$ref": "#/backend/entities/AccountMapping"
+          },
+          "description": "Stores account mapping information, linking application account names to QuickBooks Online account names.",
+          "params": [
+            {
+              "name": "accountId",
+              "description": "Unique identifier for the account mapping."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support the Trucking Financial Bridge application, focusing on driver profiles, loads, recurring deductions, expenses, and account mappings for generating QuickBooks Online (QBO) CSV files. The primary goal is to facilitate secure, scalable, and easily debuggable data management, especially concerning financial transactions and driver settlements. The structure prioritizes Authorization Independence by leveraging path-based ownership for driver-related data and avoids hierarchical authorization dependencies to ensure atomic operations and simplifies security rules.\n\n1.  **Authorization Independence via Denormalization:** Driver profiles and loads are structured to provide authorization independence. Loads are placed under the `/drivers/{driverId}/loads/{loadId}` path to allow access based on driver ownership. Expenses, categorized as company or driver-related, are stored under the `/expenses/{expenseId}` path, with the `driverId` field denormalized to indicate the associated driver, facilitating easy filtering and rule creation without complex `get()` calls. Recurring deductions are global and managed in `/recurring_deductions/{deductionId}`.\n\n2.  **Structural Segregation:** Documents are segregated based on their security posture. Driver-specific loads are nested under the driver's document, ensuring only the driver (or authorized personnel) can access them. Global entities like `AccountMapping` are stored in their own collections to avoid mixing data with different access requirements.\n\n3.  **Access Modeling:** Path-based ownership is used for associating loads with drivers, establishing a `User 1:N Entity` relationship. The membership map is not explicitly used here since ownership is inferred from the path. Global roles are not defined, but could be implemented in dedicated collections if needed.\n\n4.  **QAPs (Rules are not Filters):** Secure list operations are supported by structuring data in a way that authorization can be determined directly from the document path. For example, listing loads under `/drivers/{driverId}/loads` is secure because the security rules can enforce that only the driver (or authorized users) can access loads under their path. Similarly, listing all expenses is possible, but security rules will determine which expenses are accessible based on the requesting user and the `driverId` field."
+  }
+}
