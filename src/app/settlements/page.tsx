@@ -13,6 +13,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -243,63 +244,75 @@ export default function SettlementsPage() {
 
 
   return (
-    <div className="container mx-auto py-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Weekly Settlement Wizard</h1>
-          <p className="text-muted-foreground">
-            Input weekly loads and expenses to generate QBO-ready CSV files.
-          </p>
+    <div className="container mx-auto py-8 space-y-8">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Weekly Settlement Wizard</h1>
+          <p className="text-muted-foreground text-lg">Input weekly loads and expenses to generate QBO-ready CSV files.</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0}>
-            <FileDown className="mr-2 h-4 w-4" /> Export Invoices (CSV)
+          <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0} className="rounded-xl">
+            <FileDown className="mr-2 h-4 w-4" /> Export Invoices
           </Button>
-          <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0}>
-            <FileDown className="mr-2 h-4 w-4" /> Export Journal (CSV)
+          <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
+            <FileDown className="mr-2 h-4 w-4" /> Export Journal
           </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="loads">
-        <TabsList className="mb-4">
-          <TabsTrigger value="loads">Loads ({loads?.length || 0})</TabsTrigger>
-          <TabsTrigger value="expenses">Expenses ({expenses?.length || 0})</TabsTrigger>
-          <TabsTrigger value="summary">Settlement Summary ({settlementSummary.length})</TabsTrigger>
+      <Tabs defaultValue="loads" className="w-full">
+        <TabsList className="mb-6 h-12 p-1 bg-muted/30 rounded-xl border border-border/40">
+          <TabsTrigger value="loads" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Loads ({loads?.length || 0})</TabsTrigger>
+          <TabsTrigger value="expenses" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Expenses ({expenses?.length || 0})</TabsTrigger>
+          <TabsTrigger value="summary" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Settlement Summary</TabsTrigger>
         </TabsList>
 
         {/* Loads Tab */}
-        <TabsContent value="loads">
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Loads</CardTitle>
-              <CardDescription>All loads completed this settlement period.</CardDescription>
-              <Button onClick={handleAddLoad} size="sm" className="absolute top-4 right-4">
+        <TabsContent value="loads" className="space-y-4">
+          <Card className="rounded-xl border-border/50 shadow-sm overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b border-border/40 flex flex-row items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="font-display">Weekly Loads</CardTitle>
+                <CardDescription>All loads completed this settlement period.</CardDescription>
+              </div>
+              <Button onClick={handleAddLoad} size="sm" className="rounded-lg shadow-sm">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Load
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Load #</TableHead>
+                  <TableRow className="hover:bg-transparent bg-muted/10">
+                    <TableHead className="pl-6">Load #</TableHead>
                     <TableHead>Driver</TableHead>
                     <TableHead>Miles</TableHead>
                     <TableHead>Linehaul</TableHead>
-                    <TableHead>Fuel Surcharge</TableHead>
-                    <TableHead>Factoring Fee</TableHead>
+                    <TableHead>Fuel</TableHead>
+                    <TableHead>Fee</TableHead>
                     <TableHead>Advance</TableHead>
                     <TableHead>Attachments</TableHead>
-                    <TableHead><span className="sr-only">Actions</span></TableHead>
+                    <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
-                    <TableRow><TableCell colSpan={9} className="h-24 text-center">Loading...</TableCell></TableRow>
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                        <TableCell><Skeleton className="h-8 w-8 rounded-full" /></TableCell>
+                      </TableRow>
+                    ))
                   ) : loads && loads.length > 0 ? (
                     loads.map((load) => (
-                      <TableRow key={load.id}>
-                        <TableCell className="font-medium">{load.loadNumber}</TableCell>
+                      <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
+                        <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>
                         <TableCell>{driverMap.get(load.driverId)?.name || 'Unknown'}</TableCell>
                         <TableCell>{load.miles}</TableCell>
                         <TableCell>{formatCurrency(load.linehaul)}</TableCell>
@@ -310,27 +323,28 @@ export default function SettlementsPage() {
                           {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="icon">
+                                <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full">
                                   <Paperclip className="h-4 w-4" />
                                 </Button>
                               </DialogTrigger>
                               <DialogContent>
+                                {/* ... existing dialog content can stay simple ... */}
                                 <DialogHeader>
                                   <DialogTitle>Attachments for Load #{load.loadNumber}</DialogTitle>
                                 </DialogHeader>
                                 <div className="py-4 space-y-4">
                                   {load.proofOfDeliveryUrl && (
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Proof of Delivery</h4>
-                                      <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
+                                    <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                      <h4 className="font-semibold mb-1 text-sm">Proof of Delivery</h4>
+                                      <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
                                         View POD
                                       </a>
                                     </div>
                                   )}
                                   {load.rateConfirmationUrl && (
-                                    <div>
-                                      <h4 className="font-semibold mb-2">Rate Confirmation</h4>
-                                      <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
+                                    <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                      <h4 className="font-semibold mb-1 text-sm">Rate Confirmation</h4>
+                                      <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
                                         View Rate Con
                                       </a>
                                     </div>
@@ -343,7 +357,7 @@ export default function SettlementsPage() {
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button aria-haspopup="true" size="icon" variant="ghost">
+                              <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
                                 <MoreHorizontal className="h-4 w-4" />
                                 <span className="sr-only">Toggle menu</span>
                               </Button>
@@ -358,7 +372,7 @@ export default function SettlementsPage() {
                       </TableRow>
                     ))
                   ) : (
-                    <TableRow><TableCell colSpan={9} className="h-24 text-center">No loads added yet.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">No loads added yet.</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -368,24 +382,26 @@ export default function SettlementsPage() {
 
         {/* Expenses Tab */}
         <TabsContent value="expenses">
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Expenses & Deductions</CardTitle>
-              <CardDescription>Company expenses and driver-specific deductions.</CardDescription>
-              <Button onClick={handleAddExpense} size="sm" className="absolute top-4 right-4">
+          <Card className="rounded-xl border-border/50 shadow-sm overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b border-border/40 flex flex-row items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="font-display">Weekly Expenses & Deductions</CardTitle>
+                <CardDescription>Company expenses and driver-specific deductions.</CardDescription>
+              </div>
+              <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
+                  <TableRow className="hover:bg-transparent bg-muted/10">
+                    <TableHead className="pl-6">Date</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Driver</TableHead>
                     <TableHead>Amount</TableHead>
-                    <TableHead><span className="sr-only">Actions</span></TableHead>
+                    <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -393,16 +409,16 @@ export default function SettlementsPage() {
                     <TableRow><TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell></TableRow>
                   ) : expenses && expenses.length > 0 ? (
                     expenses.map((expense) => (
-                      <TableRow key={expense.id}>
-                        <TableCell>{new Date(expense.date).toLocaleDateString()}</TableCell>
+                      <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
+                        <TableCell className="pl-6">{new Date(expense.date).toLocaleDateString()}</TableCell>
                         <TableCell className="font-medium">{expense.description}</TableCell>
-                        <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'}>{expense.type}</Badge></TableCell>
-                        <TableCell>{expense.driverId ? driverMap.get(expense.driverId)?.name : 'N/A'}</TableCell>
+                        <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'} className="rounded-md capitalize">{expense.type}</Badge></TableCell>
+                        <TableCell>{expense.driverId ? driverMap.get(expense.driverId)?.name : <span className="text-muted-foreground">-</span>}</TableCell>
                         <TableCell>{formatCurrency(expense.amount)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button aria-haspopup="true" size="icon" variant="ghost">
+                              <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
                                 <MoreHorizontal className="h-4 w-4" />
                                 <span className="sr-only">Toggle menu</span>
                               </Button>
@@ -417,7 +433,7 @@ export default function SettlementsPage() {
                       </TableRow>
                     ))
                   ) : (
-                    <TableRow><TableCell colSpan={6} className="h-24 text-center">No expenses added yet.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No expenses added yet.</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -426,64 +442,70 @@ export default function SettlementsPage() {
         </TabsContent>
 
         {/* Summary Tab */}
-        <TabsContent value="summary">
+        <TabsContent value="summary" className="space-y-4">
           {settlementSummary.map(summary => (
-            <Card key={summary.driverId} className="mb-6">
-              <CardHeader>
-                <CardTitle>{summary.driverName}'s Settlement</CardTitle>
+            <Card key={summary.driverId} className="rounded-xl border-border/50 shadow-sm overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b border-border/40">
+                <CardTitle className="font-display">{summary.driverName}'s Settlement</CardTitle>
                 <CardDescription>
                   Summary of pay and deductions for this period.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-4 text-center mb-6 border-b pb-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Gross Pay</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-8 pb-8 border-b border-border/40">
+                  <div className="p-4 bg-muted/20 rounded-xl">
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Gross Pay</p>
+                    <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Deductions</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
+                  <div className="p-4 bg-muted/20 rounded-xl">
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Total Deductions</p>
+                    <p className="text-3xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Net Pay</p>
-                    <p className="text-2xl font-bold">{formatCurrency(summary.netPay)}</p>
+                  <div className="p-4 bg-primary/5 rounded-xl border border-primary/10">
+                    <p className="text-sm font-medium text-foreground mb-1">Net Pay</p>
+                    <p className="text-3xl font-bold text-primary">{formatCurrency(summary.netPay)}</p>
                   </div>
                 </div>
                 <div className="grid md:grid-cols-2 gap-8">
                   <div>
-                    <h4 className="font-semibold mb-2">Loads ({summary.loads.length})</h4>
-                    <Table>
-                      <TableHeader><TableRow><TableHead>Load #</TableHead><TableHead>Linehaul</TableHead><TableHead>Miles</TableHead></TableRow></TableHeader>
-                      <TableBody>
-                        {summary.loads.map(l => <TableRow key={l.id}><TableCell>{l.loadNumber}</TableCell><TableCell>{formatCurrency(l.linehaul)}</TableCell><TableCell>{l.miles}</TableCell></TableRow>)}
-                      </TableBody>
-                    </Table>
+                    <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
+                    <div className="rounded-lg border overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Linehaul</TableHead><TableHead className="text-right">Miles</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {summary.loads.map(l => <TableRow key={l.id} className="hover:bg-muted/20"><TableCell>{l.loadNumber}</TableCell><TableCell>{formatCurrency(l.linehaul)}</TableCell><TableCell className="text-right">{l.miles}</TableCell></TableRow>)}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
                   <div>
-                    <h4 className="font-semibold mb-2">Deductions ({summary.deductions.length})</h4>
-                    <Table>
-                      <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Amount</TableHead></TableRow></TableHeader>
-                      <TableBody>
-                        {summary.deductions.map(d => <TableRow key={d.id}><TableCell>{d.description}</TableCell><TableCell>{formatCurrency(d.amount)}</TableCell></TableRow>)}
-                      </TableBody>
-                    </Table>
+                    <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Deductions ({summary.deductions.length})</h4>
+                    <div className="rounded-lg border overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {summary.deductions.map(d => <TableRow key={d.id} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>)}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))}
           {settlementSummary.length === 0 && (
-            <div className="flex items-center justify-center h-64 border-2 border-dashed rounded-lg">
-              <div className="text-center">
-                <h2 className="text-2xl font-semibold">No data yet</h2>
-                <p className="text-muted-foreground">Add loads and expenses to see the settlement summary.</p>
+            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-border/50 rounded-xl bg-muted/10">
+              <div className="text-center space-y-2">
+                <FileDown className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+                <h2 className="text-xl font-semibold">No Settlement Data</h2>
+                <p className="text-muted-foreground max-w-sm mx-auto">Add loads and expenses to generate the weekly settlement summary.</p>
               </div>
             </div>
           )}
         </TabsContent>
       </Tabs>
 
+      {/* Forms remain unchanged */}
       <LoadForm
         isOpen={isLoadFormOpen}
         onOpenChange={setIsLoadFormOpen}
