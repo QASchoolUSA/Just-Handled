@@ -34,7 +34,7 @@ import type { Driver } from '@/lib/types';
 const formSchema = z.object({
   firstName: z.string().min(1, { message: 'First Name is required.' }),
   lastName: z.string().min(1, { message: 'Last Name is required.' }),
-  email: z.string().email().optional().or(z.literal('')),
+  email: z.string().optional(),
   phoneNumber: z.string().optional(),
   unitId: z.string().optional(),
   payType: z.enum(['percentage', 'cpm']),
@@ -163,7 +163,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email (Optional)</FormLabel>
                     <FormControl>
                       <Input placeholder="john@example.com" {...field} />
                     </FormControl>
