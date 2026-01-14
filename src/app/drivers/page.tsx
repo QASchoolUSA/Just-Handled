@@ -307,7 +307,7 @@ export default function DriversPage() {
                       <Badge variant="secondary" className="font-medium">{driver.payType}</Badge>
                       <div className="font-mono text-muted-foreground text-xs">
                         {driver.payType === 'percentage'
-                          ? `${driver.rate * 100}%`
+                          ? `${driver.rate}%`
                           : `${formatCurrency(driver.rate)}/mi`}
                       </div>
                     </TableCell>

@@ -232,7 +232,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                   <FormItem>
                     <FormLabel>Rate</FormLabel>
                     <FormControl>
-                      <Input type="number" step="0.01" placeholder="e.g., 0.30 or 0.65" {...field} />
+                      <Input type="number" step="0.01" placeholder="e.g., 25 for %, 0.65 for CPM" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
