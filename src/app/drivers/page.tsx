@@ -407,6 +407,21 @@ export default function DriversPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Blocking Loading Modal */}
+      <Dialog open={isImporting} onOpenChange={() => { }}>
+        <DialogContent className="sm:max-w-[425px] [&>button]:hidden pointer-events-none">
+          <DialogHeader>
+            <DialogTitle className="flex flex-col items-center text-center gap-4 py-8">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              <span className="text-xl">Importing Drivers...</span>
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              Please wait while we process your file. Do not close this window.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

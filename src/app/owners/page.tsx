@@ -27,8 +27,11 @@ export default function OwnersPage() {
     const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
     const { data: owners, loading, error } = useCollection<Owner>(ownersCollection);
 
-    const [isFormOpen, setIsFormOpen] = React.useState(false);
-    const [editingOwner, setEditingOwner] = React.useState<Owner | undefined>(undefined);
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [editingOwner, setEditingOwner] = useState<Owner | undefined>(undefined);
+    const [isImportResultOpen, setIsImportResultOpen] = useState(false);
+    const [importResult, setImportResult] = useState<{ success: number; errors: any[] } | null>(null);
+    const [isImporting, setIsImporting] = useState(false);
 
     const handleAddOwner = () => {
         setEditingOwner(undefined);
@@ -173,8 +176,9 @@ export default function OwnersPage() {
                     <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl">
                         <Download className="mr-2 h-4 w-4" /> Template
                     </Button>
-                    <Button variant="outline" onClick={handleImportClick} className="rounded-xl">
-                        <Upload className="mr-2 h-4 w-4" /> Import CSV
+                    <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
+                        {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                        {isImporting ? 'Importing...' : 'Import CSV'}
                     </Button>
                     <Button onClick={handleAddOwner} className="rounded-xl shadow-sm hover:shadow-md transition-all">
                         <PlusCircle className="mr-2 h-4 w-4" /> Add Owner
@@ -283,6 +287,74 @@ export default function OwnersPage() {
                 onSave={handleFormSave}
                 owner={editingOwner}
             />
+
+            {/* Import Results Dialog */}
+            <Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Import Results</DialogTitle>
+                        <DialogDescription>
+                            {importResult?.success} owners imported successfully.
+                            {importResult?.errors && importResult.errors.length > 0 && ` ${importResult.errors.length} rows failed.`}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {importResult?.errors && importResult.errors.length > 0 ? (
+                        <div className="space-y-4">
+                            <div className="rounded-md bg-destructive/15 p-4">
+                                <div className="flex">
+                                    <AlertCircle className="h-5 w-5 text-destructive mr-2" />
+                                    <div className="text-sm font-medium text-destructive">
+                                        The following rows could not be imported:
+                                    </div>
+                                </div>
+                            </div>
+                            <ScrollArea className="h-[300px] rounded-md border p-4">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="w-[80px]">Row</TableHead>
+                                            <TableHead>Error</TableHead>
+                                            <TableHead>Data</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {importResult.errors.map((error, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell className="font-mono">{error.row}</TableCell>
+                                                <TableCell className="text-destructive font-medium">{error.reason}</TableCell>
+                                                <TableCell className="text-xs text-muted-foreground font-mono">
+                                                    {JSON.stringify(error.data).slice(0, 100)}...
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </ScrollArea>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-8 text-green-600 gap-2">
+                            <CheckCircle className="h-12 w-12" />
+                            <p className="text-lg font-medium">All rows imported successfully!</p>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Blocking Loading Modal */}
+            <Dialog open={isImporting} onOpenChange={() => { }}>
+                <DialogContent className="sm:max-w-[425px] [&>button]:hidden pointer-events-none">
+                    <DialogHeader>
+                        <DialogTitle className="flex flex-col items-center text-center gap-4 py-8">
+                            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                            <span className="text-xl">Importing Owners...</span>
+                        </DialogTitle>
+                        <DialogDescription className="text-center">
+                            Please wait while we process your file. Do not close this window.
+                        </DialogDescription>
+                    </DialogHeader>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
