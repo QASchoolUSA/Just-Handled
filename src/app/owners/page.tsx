@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useRef } from 'react';
-import { PlusCircle, MoreHorizontal, Download, Upload, Building2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { PlusCircle, MoreHorizontal, Download, Upload, Building2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { OwnerForm } from '@/components/owner-form';
 import type { Owner } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
@@ -21,6 +22,8 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import Papa from 'papaparse';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function OwnersPage() {
     const firestore = useFirestore();
