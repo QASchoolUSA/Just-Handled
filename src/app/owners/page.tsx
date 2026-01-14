@@ -25,7 +25,7 @@ import Papa from 'papaparse';
 export default function OwnersPage() {
     const firestore = useFirestore();
     const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
-    const { data: owners, loading } = useCollection<Owner>(ownersCollection);
+    const { data: owners, loading, error } = useCollection<Owner>(ownersCollection);
 
     const [isFormOpen, setIsFormOpen] = React.useState(false);
     const [editingOwner, setEditingOwner] = React.useState<Owner | undefined>(undefined);
@@ -51,9 +51,9 @@ export default function OwnersPage() {
 
     const handleDownloadTemplate = () => {
         const csvData = [
-            ['Name', 'Percentage (e.g. 0.88)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
-            ['Acme Transit LLC', '0.88', '150', '50', '35', '25', '250', '60'],
-            ['Redline Logistics', '0.90', '200', '0', '35', '0', '0', '0']
+            ['Name', 'Unit ID', 'Percentage (e.g. 0.88)', 'Fuel Rebate (Weekly)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
+            ['Acme Transit LLC', '101', '0.88', '50.00', '150', '50', '35', '25', '250', '60'],
+            ['Redline Logistics', '102', '0.90', '0', '200', '0', '35', '0', '0', '0']
         ];
         const csv = Papa.unparse(csvData);
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -86,6 +86,7 @@ export default function OwnersPage() {
                         if (!row['Name'] || !row['Percentage (e.g. 0.88)']) continue;
 
                         const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
+                        const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)']) || 0;
                         const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
                         const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
                         const eld = parseFloat(row['ELD']) || 0;
@@ -95,7 +96,9 @@ export default function OwnersPage() {
 
                         const newOwner = {
                             name: row['Name'],
+                            unitId: row['Unit ID'] || '',
                             percentage,
+                            fuelRebate,
                             recurringDeductions: {
                                 insurance,
                                 escrow,
@@ -126,7 +129,9 @@ export default function OwnersPage() {
 
         const dataToSave = {
             name: ownerData.name,
+            unitId: ownerData.unitId || '',
             percentage: ownerData.percentage,
+            fuelRebate: ownerData.fuelRebate || 0,
             recurringDeductions: {
                 insurance: ownerData.insurance,
                 escrow: ownerData.escrow,
@@ -177,6 +182,14 @@ export default function OwnersPage() {
                 </div>
             </div>
 
+            {/* Error Display */}
+            {error && (
+                <div className="bg-destructive/15 text-destructive px-4 py-3 rounded-md flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    <span>Error loading owners: {error.message} (Check permissions/auth)</span>
+                </div>
+            )}
+
             <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
                 <CardHeader className="bg-muted/30 border-b border-border/40">
                     <CardTitle className="font-display">All Owners</CardTitle>
@@ -187,7 +200,9 @@ export default function OwnersPage() {
                         <TableHeader>
                             <TableRow className="hover:bg-transparent">
                                 <TableHead className="pl-6">Company Name</TableHead>
+                                <TableHead>Unit ID</TableHead>
                                 <TableHead>Percentage</TableHead>
+                                <TableHead>Fuel Rebate</TableHead>
                                 <TableHead>Recurring Deductions</TableHead>
                                 <TableHead className="w-[80px]">
                                     <span className="sr-only">Actions</span>
@@ -218,8 +233,12 @@ export default function OwnersPage() {
                                                 <span>{owner.name}</span>
                                             </div>
                                         </TableCell>
+                                        <TableCell className="font-mono">{owner.unitId || '-'}</TableCell>
                                         <TableCell className="font-mono text-muted-foreground">
                                             {(owner.percentage * 100).toFixed(2)}%
+                                        </TableCell>
+                                        <TableCell className="font-mono text-muted-foreground">
+                                            {owner.fuelRebate ? formatCurrency(owner.fuelRebate) : '-'}
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
                                             <div className="flex flex-col gap-1">

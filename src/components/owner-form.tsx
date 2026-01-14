@@ -109,32 +109,63 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-                        <FormField
-                            control={form.control}
-                            name="name"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Company Name</FormLabel>
-                                    <FormControl>
-                                        <Input placeholder="Acme Logistics LLC" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        <FormField
-                            control={form.control}
-                            name="percentage"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Percentage Split (e.g. 0.88 for 88%)</FormLabel>
-                                    <FormControl>
-                                        <Input type="number" step="0.01" max="1" placeholder="0.88" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="name"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Company Name</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="Acme Logistics LLC" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="unitId"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Unit ID</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder="e.g. 101" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="percentage"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Percentage Split (e.g. 0.88)</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" max="1" placeholder="0.88" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="fuelRebate"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Fuel Rebate (Weekly)</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                             <FormField
                                 control={form.control}

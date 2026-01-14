@@ -29,7 +29,8 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 export default function DriversPage() {
   const firestore = useFirestore();
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
-  const { data: drivers, loading } = useCollection<Driver>(driversCollection);
+  // IMPORTANT: We now destructure 'error' to show it.
+  const { data: drivers, loading, error } = useCollection<Driver>(driversCollection);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | undefined>(undefined);
