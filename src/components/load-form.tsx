@@ -44,6 +44,7 @@ const formSchema = z.object({
   truckId: z.string().min(1, { message: 'Truck ID is required.' }),
   trailerNumber: z.string().min(1, { message: 'Trailer Number is required.' }),
   miles: z.coerce.number().min(0),
+  emptyMiles: z.coerce.number().min(0),
 
   // Financials
   invoiceAmount: z.coerce.number().min(0),
@@ -85,6 +86,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
       truckId: '',
       trailerNumber: '',
       miles: 0,
+      emptyMiles: 0,
       invoiceAmount: 0,
       factoringFee: 0,
       advance: 0,
@@ -118,6 +120,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
           truckId: '',
           trailerNumber: '',
           miles: 0,
+          emptyMiles: 0,
           invoiceAmount: 0,
           factoringFee: 0,
           advance: 0,
@@ -173,13 +176,24 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
               />
               <FormField
                 control={form.control}
-                name="invoiceId"
+                name="driverId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Invoice ID</FormLabel>
-                    <FormControl>
-                      <Input placeholder="INV-001" {...field} />
-                    </FormControl>
+                    <FormLabel>Driver</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a driver" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {drivers.map((driver) => (
+                          <SelectItem key={driver.id} value={driver.id}>
+                            {driver.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -250,6 +264,19 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Miles</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="1" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="emptyMiles"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Empty Miles</FormLabel>
                       <FormControl>
                         <Input type="number" step="1" {...field} />
                       </FormControl>

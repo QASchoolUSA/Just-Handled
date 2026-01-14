@@ -80,7 +80,9 @@ export default function SettlementsPage() {
       rateConfirmationUrl: loadData.rateConfirmationUrl || null,
       brokerId: loadData.brokerId || null,
       truckId: loadData.truckId || null,
+
       trailerNumber: loadData.trailerNumber || null,
+      emptyMiles: loadData.emptyMiles || 0,
       primeRateSurcharge: loadData.primeRateSurcharge || 0,
       transactionFee: loadData.transactionFee || 0,
     };
@@ -147,14 +149,7 @@ export default function SettlementsPage() {
       const driver = driverMap.get(load.driverId);
       const summary = summaryByDriver.get(load.driverId);
       if (driver && summary) {
-        let loadPay = 0;
-        if (driver.payType === 'percentage') {
-          loadPay = load.invoiceAmount * driver.rate;
-        } else {
-          if (load.miles) {
-            loadPay = load.miles * driver.rate;
-          }
-        }
+        const loadPay = calculateDriverPay(load, driver);
         summary.grossPay += loadPay;
         summary.loads.push(load);
       }
@@ -246,6 +241,14 @@ export default function SettlementsPage() {
   };
 
   // --- CSV Import Helpers ---
+  const calculateDriverPay = (load: Load, driver?: Driver) => {
+    if (!driver) return 0;
+    if (driver.payType === 'percentage') {
+      return load.invoiceAmount * driver.rate;
+    }
+    return (load.miles || 0) * driver.rate;
+  };
+
   const loadFileInputRef = React.useRef<HTMLInputElement>(null);
   const expenseFileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -254,14 +257,14 @@ export default function SettlementsPage() {
       [
         'Load #', 'Driver Name', 'Pickup Date', 'Delivery Date', 'Broker ID',
         'Invoice ID', 'Trailer Number', 'Truck ID',
-        'Miles', 'Pickup Location', 'Delivery Location',
+        'Miles', 'Empty Miles', 'Pickup Location', 'Delivery Location',
         'Invoice Amount', 'Reserve Amount', 'Prime Rate Surcharge', 'Transaction Fee',
         'Factoring Fee', 'Advance'
       ],
       [
         '12345', 'John Doe', '2025-01-01', '2025-01-03', 'BROKER-1',
         'INV-001', 'Trailer-500', 'Truck-101',
-        '500', 'Los Angeles, CA', 'New York, NY',
+        '500', '50', 'Los Angeles, CA', 'New York, NY',
         '1350.00', '0.00', '0.00', '0.00',
         '35.00', '0.00'
       ],
@@ -316,6 +319,7 @@ export default function SettlementsPage() {
               truckId: row['Truck ID'] || '',
 
               miles: parseFloat(row['Miles']) || 0,
+              emptyMiles: parseFloat(row['Empty Miles']) || 0,
               pickupLocation: row['Pickup Location'] || '',
               deliveryLocation: row['Delivery Location'] || '',
 
@@ -474,7 +478,9 @@ export default function SettlementsPage() {
                     <TableHead>Delivery Date</TableHead>
                     <TableHead>Origin</TableHead>
                     <TableHead>Destination</TableHead>
+
                     <TableHead>Invoice Amt</TableHead>
+                    <TableHead>Total Pay</TableHead>
                     <TableHead>Advance</TableHead>
                     <TableHead>Attachments</TableHead>
                     <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
@@ -504,7 +510,11 @@ export default function SettlementsPage() {
                         <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>
                         <TableCell>{load.pickupLocation}</TableCell>
                         <TableCell>{load.deliveryLocation}</TableCell>
+                        <TableCell>{load.deliveryLocation}</TableCell>
                         <TableCell>{formatCurrency(load.invoiceAmount)}</TableCell>
+                        <TableCell className="font-semibold text-green-600">
+                          {formatCurrency(calculateDriverPay(load, driverMap.get(load.driverId)))}
+                        </TableCell>
                         <TableCell>{formatCurrency(load.advance)}</TableCell>
                         <TableCell>
                           {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
@@ -667,9 +677,15 @@ export default function SettlementsPage() {
                     <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
                     <div className="rounded-lg border overflow-hidden">
                       <Table>
-                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Loc</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Loc</TableHead><TableHead className="text-right">Total Pay</TableHead></TableRow></TableHeader>
                         <TableBody>
-                          {summary.loads.map(l => <TableRow key={l.id} className="hover:bg-muted/20"><TableCell>{l.loadNumber}</TableCell><TableCell className="text-xs">{l.deliveryLocation}</TableCell><TableCell className="text-right">{formatCurrency(l.invoiceAmount)}</TableCell></TableRow>)}
+                          {summary.loads.map(l => (
+                            <TableRow key={l.id} className="hover:bg-muted/20">
+                              <TableCell>{l.loadNumber}</TableCell>
+                              <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
+                              <TableCell className="text-right font-medium">{formatCurrency(calculateDriverPay(l, driverMap.get(l.driverId)))}</TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
                     </div>

@@ -46,6 +46,7 @@ export type Load = {
   truckId: string;
   trailerNumber: string;
   miles: number;
+  emptyMiles: number;
 
   // Financials
   invoiceAmount: number;
