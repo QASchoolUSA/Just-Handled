@@ -38,23 +38,26 @@ export type Load = {
   loadNumber: string;
   driverId: string;
 
-  // Financials
-  linehaul: number;
-  fuelSurcharge: number;
-  factoringFee: number;
-  advance: number;
+  // Logistics
+  pickupLocation: string;
+  deliveryLocation: string;
+  pickupDate: string;
+  deliveryDate: string;
+  truckId: string;
+  trailerNumber: string;
   miles: number;
 
-  // New Fields
-  pickupDate: string;
-  brokerId?: string;
-  invoiceId: string;
-  invoiceDate: string;
-  poNumber: string;
+  // Financials
   invoiceAmount: number;
+  factoringFee: number;
+  advance: number;
   reserveAmount: number;
   primeRateSurcharge: number;
   transactionFee: number;
+
+  // Meta
+  brokerId?: string;
+  invoiceId: string;
 
   proofOfDeliveryUrl?: string;
   rateConfirmationUrl?: string;

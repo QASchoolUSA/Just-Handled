@@ -36,24 +36,25 @@ const formSchema = z.object({
   loadNumber: z.string().min(1, { message: 'Load number is required.' }),
   driverId: z.string().min(1, { message: 'Please select a driver.' }),
 
-  // New Fields
+  // Logistics
+  pickupLocation: z.string().min(1, { message: 'Pickup Location is required.' }),
+  deliveryLocation: z.string().min(1, { message: 'Delivery Location is required.' }),
   pickupDate: z.string().min(1, { message: 'Pickup Date is required.' }),
-  brokerId: z.string().optional(),
-  invoiceId: z.string().min(1, { message: 'Invoice ID is required.' }),
-  invoiceDate: z.string().min(1, { message: 'Invoice Date is required.' }),
-  poNumber: z.string().optional(),
+  deliveryDate: z.string().min(1, { message: 'Delivery Date is required.' }),
+  truckId: z.string().min(1, { message: 'Truck ID is required.' }),
+  trailerNumber: z.string().min(1, { message: 'Trailer Number is required.' }),
+  miles: z.coerce.number().min(0),
 
   // Financials
-  miles: z.coerce.number().min(0),
-  linehaul: z.coerce.number().min(0),
-  fuelSurcharge: z.coerce.number().min(0),
-
   invoiceAmount: z.coerce.number().min(0),
+  factoringFee: z.coerce.number().min(0),
+  advance: z.coerce.number().min(0),
   reserveAmount: z.coerce.number().min(0),
   primeRateSurcharge: z.coerce.number().min(0).default(0),
   transactionFee: z.coerce.number().min(0).default(0),
-  factoringFee: z.coerce.number().min(0),
-  advance: z.coerce.number().min(0),
+
+  brokerId: z.string().optional(),
+  invoiceId: z.string().min(1, { message: 'Invoice ID is required.' }),
 
   proofOfDelivery: z.any().optional(),
   rateConfirmation: z.any().optional(),
@@ -77,20 +78,21 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
     defaultValues: {
       loadNumber: '',
       driverId: '',
-      pickupDate: '',
-      brokerId: '',
-      invoiceId: '',
-      invoiceDate: '',
-      poNumber: '',
+      pickupLocation: '',
+      deliveryLocation: '',
+      pickupDate: new Date().toISOString().split('T')[0],
+      deliveryDate: new Date().toISOString().split('T')[0],
+      truckId: '',
+      trailerNumber: '',
       miles: 0,
-      linehaul: 0,
-      fuelSurcharge: 0,
       invoiceAmount: 0,
+      factoringFee: 0,
+      advance: 0,
       reserveAmount: 0,
       primeRateSurcharge: 0,
       transactionFee: 0,
-      factoringFee: 0,
-      advance: 0,
+      brokerId: '',
+      invoiceId: '',
     },
   });
 
@@ -100,7 +102,8 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
         form.reset({
           ...load,
           brokerId: load.brokerId || '',
-          poNumber: load.poNumber || '',
+          truckId: load.truckId,
+          trailerNumber: load.trailerNumber,
           proofOfDelivery: undefined,
           rateConfirmation: undefined,
         });
@@ -108,20 +111,21 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
         form.reset({
           loadNumber: '',
           driverId: '',
+          pickupLocation: '',
+          deliveryLocation: '',
           pickupDate: new Date().toISOString().split('T')[0],
-          brokerId: '',
-          invoiceId: '',
-          invoiceDate: new Date().toISOString().split('T')[0],
-          poNumber: '',
+          deliveryDate: new Date().toISOString().split('T')[0],
+          truckId: '',
+          trailerNumber: '',
           miles: 0,
-          linehaul: 0,
-          fuelSurcharge: 0,
           invoiceAmount: 0,
+          factoringFee: 0,
+          advance: 0,
           reserveAmount: 0,
           primeRateSurcharge: 0,
           transactionFee: 0,
-          factoringFee: 0,
-          advance: 0,
+          brokerId: '',
+          invoiceId: '',
           proofOfDelivery: undefined,
           rateConfirmation: undefined,
         });
@@ -137,7 +141,6 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
       proofOfDeliveryUrl: load?.proofOfDeliveryUrl,
       rateConfirmationUrl: load?.rateConfirmationUrl,
       brokerId: saveableValues.brokerId || undefined,
-      poNumber: saveableValues.poNumber || '',
     };
 
     onSave(dataToSave);
@@ -183,217 +186,217 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="pickupDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Pickup Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="invoiceDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Invoice Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="driverId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Driver</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+            <div className="space-y-4 rounded-lg border p-4 bg-muted/20">
+              <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Logistics</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="pickupLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pickup Location</FormLabel>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a driver" />
-                        </SelectTrigger>
+                        <Input placeholder="City, State" {...field} />
                       </FormControl>
-                      <SelectContent>
-                        {drivers.map(driver => (
-                          <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="brokerId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Broker ID (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Broker XYZ" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="deliveryLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Location</FormLabel>
+                      <FormControl>
+                        <Input placeholder="City, State" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="pickupDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pickup Date</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="deliveryDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Date</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="miles"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Miles</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="1" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="truckId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Truck ID</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Truck 101" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="trailerNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Trailer Number</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Trailer 500" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="brokerId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Broker ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Broker XYZ" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="poNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>PO Number (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="PO-123" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="miles"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Miles</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="1" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <div className="space-y-4 rounded-lg border p-4 bg-muted/20">
+              <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Financials</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="invoiceId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Invoice ID</FormLabel>
+                      <FormControl>
+                        <Input placeholder="INV-001" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="invoiceAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Invoice Amount</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="factoringFee"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Factoring Fee</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="advance"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cash Advance</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="linehaul"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Linehaul</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fuelSurcharge"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fuel Surcharge</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="invoiceAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Invoice Amount</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="reserveAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reserve Amount</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="primeRateSurcharge"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Prime Rate Surch.</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="transactionFee"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Transaction Fee</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="factoringFee"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Factoring Fee</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="advance"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cash Advance</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-3 gap-4 border-t pt-4 border-border/50">
+                <FormField
+                  control={form.control}
+                  name="reserveAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reserve Amount</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="primeRateSurcharge"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prime Rate Surch.</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="transactionFee"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Transaction Fee</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             <div className="space-y-4">

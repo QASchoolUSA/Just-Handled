@@ -79,7 +79,8 @@ export default function SettlementsPage() {
       proofOfDeliveryUrl: loadData.proofOfDeliveryUrl || null,
       rateConfirmationUrl: loadData.rateConfirmationUrl || null,
       brokerId: loadData.brokerId || null,
-      poNumber: loadData.poNumber || null,
+      truckId: loadData.truckId || null,
+      trailerNumber: loadData.trailerNumber || null,
       primeRateSurcharge: loadData.primeRateSurcharge || 0,
       transactionFee: loadData.transactionFee || 0,
     };
@@ -95,7 +96,7 @@ export default function SettlementsPage() {
     setIsLoadFormOpen(false);
   };
 
-  // --- Expense Management ---
+
   const handleAddExpense = () => {
     setEditingExpense(undefined);
     setIsExpenseFormOpen(true);
@@ -148,7 +149,7 @@ export default function SettlementsPage() {
       if (driver && summary) {
         let loadPay = 0;
         if (driver.payType === 'percentage') {
-          loadPay = load.linehaul * driver.rate;
+          loadPay = load.invoiceAmount * driver.rate;
         } else {
           if (load.miles) {
             loadPay = load.miles * driver.rate;
@@ -187,7 +188,7 @@ export default function SettlementsPage() {
       'Invoice Date': today,
       'Due Date': today,
       'Item(Description)': 'Freight',
-      'Item(Amount)': load.linehaul + load.fuelSurcharge,
+      'Item(Amount)': load.invoiceAmount,
       'Class': 'Revenue'
     }));
 
@@ -202,7 +203,7 @@ export default function SettlementsPage() {
     let journalNo = 1;
 
     // 1. Factoring Entry
-    const totalRevenue = loads.reduce((sum, l) => sum + l.linehaul + l.fuelSurcharge, 0);
+    const totalRevenue = loads.reduce((sum, l) => sum + l.invoiceAmount, 0);
     const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
 
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.factoringClearing, Debits: totalRevenue - totalFactoringFees, Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
@@ -251,16 +252,16 @@ export default function SettlementsPage() {
   const handleGenerateLoadTemplate = () => {
     const csvData = [
       [
-        'Load #', 'Driver Name', 'Pickup Date', 'Broker ID',
-        'Invoice ID', 'Invoice Date', 'PO Number',
-        'Miles', 'Linehaul', 'Fuel Surcharge',
+        'Load #', 'Driver Name', 'Pickup Date', 'Delivery Date', 'Broker ID',
+        'Invoice ID', 'Trailer Number', 'Truck ID',
+        'Miles', 'Pickup Location', 'Delivery Location',
         'Invoice Amount', 'Reserve Amount', 'Prime Rate Surcharge', 'Transaction Fee',
         'Factoring Fee', 'Advance'
       ],
       [
-        '12345', 'John Doe', '2025-01-01', 'BROKER-1',
-        'INV-001', '2025-01-05', 'PO-100',
-        '500', '1200.00', '150.00',
+        '12345', 'John Doe', '2025-01-01', '2025-01-03', 'BROKER-1',
+        'INV-001', 'Trailer-500', 'Truck-101',
+        '500', 'Los Angeles, CA', 'New York, NY',
         '1350.00', '0.00', '0.00', '0.00',
         '35.00', '0.00'
       ],
@@ -308,14 +309,15 @@ export default function SettlementsPage() {
               driverId: driver.id,
 
               pickupDate: row['Pickup Date'] || new Date().toISOString().split('T')[0],
+              deliveryDate: row['Delivery Date'] || new Date().toISOString().split('T')[0],
               brokerId: row['Broker ID'] || '',
               invoiceId: row['Invoice ID'] || '',
-              invoiceDate: row['Invoice Date'] || new Date().toISOString().split('T')[0],
-              poNumber: row['PO Number'] || '',
+              trailerNumber: row['Trailer Number'] || '',
+              truckId: row['Truck ID'] || '',
 
               miles: parseFloat(row['Miles']) || 0,
-              linehaul: parseFloat(row['Linehaul']) || 0,
-              fuelSurcharge: parseFloat(row['Fuel Surcharge']) || 0,
+              pickupLocation: row['Pickup Location'] || '',
+              deliveryLocation: row['Delivery Location'] || '',
 
               invoiceAmount: parseFloat(row['Invoice Amount']) || 0,
               reserveAmount: parseFloat(row['Reserve Amount']) || 0,
@@ -468,10 +470,11 @@ export default function SettlementsPage() {
                   <TableRow className="hover:bg-transparent bg-muted/10">
                     <TableHead className="pl-6">Load #</TableHead>
                     <TableHead>Driver</TableHead>
-                    <TableHead>Miles</TableHead>
-                    <TableHead>Linehaul</TableHead>
-                    <TableHead>Fuel</TableHead>
-                    <TableHead>Fee</TableHead>
+                    <TableHead>Pickup Date</TableHead>
+                    <TableHead>Delivery Date</TableHead>
+                    <TableHead>Origin</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Invoice Amt</TableHead>
                     <TableHead>Advance</TableHead>
                     <TableHead>Attachments</TableHead>
                     <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
@@ -497,10 +500,11 @@ export default function SettlementsPage() {
                       <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
                         <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>
                         <TableCell>{driverMap.get(load.driverId)?.name || 'Unknown'}</TableCell>
-                        <TableCell>{load.miles}</TableCell>
-                        <TableCell>{formatCurrency(load.linehaul)}</TableCell>
-                        <TableCell>{formatCurrency(load.fuelSurcharge)}</TableCell>
-                        <TableCell>{formatCurrency(load.factoringFee)}</TableCell>
+                        <TableCell>{new Date(load.pickupDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{load.pickupLocation}</TableCell>
+                        <TableCell>{load.deliveryLocation}</TableCell>
+                        <TableCell>{formatCurrency(load.invoiceAmount)}</TableCell>
                         <TableCell>{formatCurrency(load.advance)}</TableCell>
                         <TableCell>
                           {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
@@ -663,9 +667,9 @@ export default function SettlementsPage() {
                     <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
                     <div className="rounded-lg border overflow-hidden">
                       <Table>
-                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Linehaul</TableHead><TableHead className="text-right">Miles</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Loc</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
                         <TableBody>
-                          {summary.loads.map(l => <TableRow key={l.id} className="hover:bg-muted/20"><TableCell>{l.loadNumber}</TableCell><TableCell>{formatCurrency(l.linehaul)}</TableCell><TableCell className="text-right">{l.miles}</TableCell></TableRow>)}
+                          {summary.loads.map(l => <TableRow key={l.id} className="hover:bg-muted/20"><TableCell>{l.loadNumber}</TableCell><TableCell className="text-xs">{l.deliveryLocation}</TableCell><TableCell className="text-right">{formatCurrency(l.invoiceAmount)}</TableCell></TableRow>)}
                         </TableBody>
                       </Table>
                     </div>
