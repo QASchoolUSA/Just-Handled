@@ -80,6 +80,9 @@ export default function OwnersPage() {
         const file = event.target.files?.[0];
         if (!file) return;
 
+        setIsImporting(true);
+        setImportResult(null);
+
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
@@ -87,44 +90,67 @@ export default function OwnersPage() {
                 if (results.data && firestore && ownersCollection) {
                     const importedOwners = results.data as any[];
                     let successCount = 0;
+                    const errors: any[] = [];
 
-                    for (const row of importedOwners) {
-                        if (!row['Name'] || !row['Percentage (e.g. 0.88)']) continue;
+                    try {
+                        await Promise.all(importedOwners.map(async (row, i) => {
+                            const rowNumber = i + 2;
+                            if (!row['Name'] && !row['name']) {
+                                if (Object.values(row).some(v => !!v)) {
+                                    errors.push({ row: rowNumber, reason: 'Missing Name', data: row });
+                                }
+                                return;
+                            }
 
-                        const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
-                        const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
-                        const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
-                        const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
-                        const eld = parseFloat(row['ELD']) || 0;
-                        const adminFee = parseFloat(row['Admin Fee']) || 0;
-                        const fuel = parseFloat(row['Fuel']) || 0;
-                        const tolls = parseFloat(row['Tolls']) || 0;
+                            try {
+                                const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
+                                const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
+                                const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
+                                const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
+                                const eld = parseFloat(row['ELD']) || 0;
+                                const adminFee = parseFloat(row['Admin Fee']) || 0;
+                                const fuel = parseFloat(row['Fuel']) || 0;
+                                const tolls = parseFloat(row['Tolls']) || 0;
 
-                        const newOwner = {
-                            name: row['Name'],
-                            unitId: row['Unit ID'] || row['unit id'] || '',
-                            percentage,
-                            fuelRebate,
-                            recurringDeductions: {
-                                insurance,
-                                escrow,
-                                eld,
-                                adminFee,
-                                fuel,
-                                tolls,
-                            },
-                            recurringAdditions: {},
-                        };
+                                const newOwner = {
+                                    name: row['Name'] || row['name'],
+                                    unitId: row['Unit ID'] || row['unit id'] || '',
+                                    percentage,
+                                    fuelRebate,
+                                    recurringDeductions: {
+                                        insurance,
+                                        escrow,
+                                        eld,
+                                        adminFee,
+                                        fuel,
+                                        tolls,
+                                    },
+                                    recurringAdditions: {},
+                                };
 
-                        await addDocumentNonBlocking(ownersCollection, newOwner);
-                        successCount++;
+                                await addDocumentNonBlocking(ownersCollection, newOwner);
+                                successCount++;
+                            } catch (err: any) {
+                                errors.push({ row: rowNumber, reason: err.message, data: row });
+                            }
+                        }));
+
+                        setImportResult({ success: successCount, errors });
+                        setIsImportResultOpen(true);
+                    } catch (err: any) {
+                        console.error("Import failed critically", err);
+                        alert("Import failed. Check console.");
+                    } finally {
+                        setIsImporting(false);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
                     }
-                    alert(`Successfully imported ${successCount} owners.`);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
+                } else {
+                    setIsImporting(false);
                 }
             },
             error: (error) => {
                 console.error('Error parsing CSV:', error);
+                setIsImporting(false);
                 alert('Error parsing CSV file. Please check the format.');
             }
         });
