@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { PlusCircle, MoreHorizontal, Download, Upload, Building2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Download, Upload, Building2, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,6 +35,38 @@ export default function OwnersPage() {
     const [isImportResultOpen, setIsImportResultOpen] = useState(false);
     const [importResult, setImportResult] = useState<{ success: number; errors: any[] } | null>(null);
     const [isImporting, setIsImporting] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+    const groupedOwners = React.useMemo(() => {
+        const groups: Record<string, Owner[]> = {};
+        owners.forEach(owner => {
+            if (!groups[owner.name]) {
+                groups[owner.name] = [];
+            }
+            groups[owner.name].push(owner);
+        });
+        // Sort groups by name alphabetically
+        const sortedGroups = Object.keys(groups).sort().reduce((acc, key) => {
+            acc[key] = groups[key];
+            return acc;
+        }, {} as Record<string, Owner[]>);
+        return sortedGroups;
+    }, [owners]);
+
+    const toggleGroup = (groupName: string) => {
+        const newExpanded = new Set(expandedGroups);
+        if (newExpanded.has(groupName)) {
+            newExpanded.delete(groupName);
+        } else {
+            newExpanded.add(groupName);
+        }
+        setExpandedGroups(newExpanded);
+    };
+
+    // Auto-expand groups when component mounts or data changes (optional, but requested "beautiful" might imply expanded by default or collapsed)
+    // Let's collapse by default for cleaner view, but maybe expand all initially if needed. 
+    // User didn't specify, but "collapsible" usually starts collapsed or expanded. 
+    // Let's start with empty (collapsed).
 
     const handleAddOwner = () => {
         setEditingOwner(undefined);
@@ -245,7 +277,7 @@ export default function OwnersPage() {
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">
+                                    <TableCell colSpan={6} className="h-24 text-center">
                                         <div className="flex flex-col gap-2">
                                             <Skeleton className="h-8 w-full" />
                                             <Skeleton className="h-8 w-full" />
@@ -253,54 +285,77 @@ export default function OwnersPage() {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : owners.length > 0 ? (
-                                owners.map((owner) => (
-                                    <TableRow key={owner.id} className="group hover:bg-muted/50 transition-colors cursor-default">
-                                        <TableCell className="font-medium pl-6">
-                                            <div className="flex items-center gap-3">
-                                                <Avatar className="h-9 w-9 border border-border/50">
-                                                    <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                                        <Building2 className="h-4 w-4" />
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <span>{owner.name}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="font-mono">{owner.unitId || '-'}</TableCell>
-                                        <TableCell className="font-mono text-muted-foreground">
-                                            {(owner.percentage * 100).toFixed(2)}%
-                                        </TableCell>
-                                        <TableCell className="font-mono text-muted-foreground">
-                                            {owner.fuelRebate ? formatCurrency(owner.fuelRebate) : '-'}
-                                        </TableCell>
-                                        <TableCell className="text-sm text-muted-foreground">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-xs">Ins: <span className="font-mono text-foreground">{formatCurrency(owner.recurringDeductions.insurance)}</span></span>
-                                                <span className="text-xs">Esc: <span className="font-mono text-foreground">{formatCurrency(owner.recurringDeductions.escrow)}</span></span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                        <span className="sr-only">Toggle menu</span>
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem onClick={() => handleEditOwner(owner)}>Edit Profile</DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleDeleteOwner(owner.id)} className="text-red-600">
-                                                        Delete Owner
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </TableCell>
-                                    </TableRow>
+                            ) : Object.keys(groupedOwners).length > 0 ? (
+                                Object.entries(groupedOwners).map(([groupName, groupOwners]) => (
+                                    <React.Fragment key={groupName}>
+                                        <TableRow
+                                            className="hover:bg-muted/50 cursor-pointer bg-muted/20"
+                                            onClick={() => toggleGroup(groupName)}
+                                        >
+                                            <TableCell colSpan={6} className="py-3">
+                                                <div className="flex items-center gap-2 font-medium">
+                                                    {expandedGroups.has(groupName) ? (
+                                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                                    ) : (
+                                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+                                                                <Building2 className="h-3 w-3" />
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <span>{groupName}</span>
+                                                        <Badge variant="secondary" className="ml-2 text-xs">
+                                                            {groupOwners.length} Unit{groupOwners.length !== 1 ? 's' : ''}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+
+                                        {expandedGroups.has(groupName) && groupOwners.map((owner) => (
+                                            <TableRow key={owner.id} className="group hover:bg-muted/50 transition-colors cursor-default border-l-2 border-l-transparent hover:border-l-primary">
+                                                <TableCell className="pl-12 text-muted-foreground text-sm">
+                                                    {/* Empty company name column, maybe show connector logic later if desired */}
+                                                </TableCell>
+                                                <TableCell className="font-mono font-medium">{owner.unitId || '-'}</TableCell>
+                                                <TableCell className="font-mono text-muted-foreground">
+                                                    {(owner.percentage * 100).toFixed(2)}%
+                                                </TableCell>
+                                                <TableCell className="font-mono text-muted-foreground">
+                                                    {owner.fuelRebate ? formatCurrency(owner.fuelRebate) : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-sm text-muted-foreground">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-xs">Ins: <span className="font-mono text-foreground">{formatCurrency(owner.recurringDeductions.insurance)}</span></span>
+                                                        <span className="text-xs">Esc: <span className="font-mono text-foreground">{formatCurrency(owner.recurringDeductions.escrow)}</span></span>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8">
+                                                                <MoreHorizontal className="h-4 w-4" />
+                                                                <span className="sr-only">Toggle menu</span>
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                                            <DropdownMenuItem onClick={() => handleEditOwner(owner)}>Edit Profile</DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => handleDeleteOwner(owner.id)} className="text-red-600">
+                                                                Delete Owner
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </React.Fragment>
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">
+                                    <TableCell colSpan={6} className="h-24 text-center">
                                         No owners found.
                                     </TableCell>
                                 </TableRow>
