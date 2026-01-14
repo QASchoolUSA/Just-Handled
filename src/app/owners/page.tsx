@@ -17,7 +17,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { OwnerForm } from '@/components/owner-form';
 import type { Owner, Driver } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, toTitleCase } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -47,7 +47,8 @@ export default function OwnersPage() {
         const map = new Map<string, string>();
         drivers.forEach(driver => {
             if (driver.unitId) {
-                map.set(driver.unitId, `${driver.firstName} ${driver.lastName}`);
+                const fullName = `${driver.firstName} ${driver.lastName}`;
+                map.set(driver.unitId, toTitleCase(fullName));
             }
         });
         return map;

@@ -12,6 +12,7 @@ export function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+
 export function downloadCsv(csvString: string, filename: string) {
   const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -24,4 +25,11 @@ export function downloadCsv(csvString: string, filename: string) {
     link.click();
     document.body.removeChild(link);
   }
+}
+
+export function toTitleCase(str: string) {
+  return str.replace(
+    /\w\S*/g,
+    text => text.charAt(0).toUpperCase() + text.substring(1).toLowerCase()
+  );
 }
