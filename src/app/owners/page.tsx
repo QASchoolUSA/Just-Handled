@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { OwnerForm } from '@/components/owner-form';
-import type { Owner } from '@/lib/types';
+import type { Owner, Driver } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
@@ -28,7 +28,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 export default function OwnersPage() {
     const firestore = useFirestore();
     const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
-    const { data: owners, loading, error } = useCollection<Owner>(ownersCollection);
+    const { data: owners, loading: ownersLoading, error: ownersError } = useCollection<Owner>(ownersCollection);
+
+    const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
+    const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
+
+    const loading = ownersLoading || driversLoading;
+    const error = ownersError; // Prioritize owner error for now
 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingOwner, setEditingOwner] = useState<Owner | undefined>(undefined);
@@ -36,6 +42,16 @@ export default function OwnersPage() {
     const [importResult, setImportResult] = useState<{ success: number; errors: any[] } | null>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+    const unitIdToDriverName = React.useMemo(() => {
+        const map = new Map<string, string>();
+        drivers.forEach(driver => {
+            if (driver.unitId) {
+                map.set(driver.unitId, `${driver.firstName} ${driver.lastName}`);
+            }
+        });
+        return map;
+    }, [drivers]);
 
     const groupedOwners = React.useMemo(() => {
         const groups: Record<string, Owner[]> = {};
@@ -62,11 +78,6 @@ export default function OwnersPage() {
         }
         setExpandedGroups(newExpanded);
     };
-
-    // Auto-expand groups when component mounts or data changes (optional, but requested "beautiful" might imply expanded by default or collapsed)
-    // Let's collapse by default for cleaner view, but maybe expand all initially if needed. 
-    // User didn't specify, but "collapsible" usually starts collapsed or expanded. 
-    // Let's start with empty (collapsed).
 
     const handleAddOwner = () => {
         setEditingOwner(undefined);
@@ -317,7 +328,8 @@ export default function OwnersPage() {
                                         {expandedGroups.has(groupName) && groupOwners.map((owner) => (
                                             <TableRow key={owner.id} className="group hover:bg-muted/50 transition-colors cursor-default border-l-2 border-l-transparent hover:border-l-primary">
                                                 <TableCell className="pl-12 text-muted-foreground text-sm">
-                                                    {/* Empty company name column, maybe show connector logic later if desired */}
+                                                    {unitIdToDriverName.get(owner.unitId || '') ||
+                                                        (owner.unitId ? <span className="opacity-50 italic">No driver assigned</span> : '')}
                                                 </TableCell>
                                                 <TableCell className="font-mono font-medium">{owner.unitId || '-'}</TableCell>
                                                 <TableCell className="font-mono text-muted-foreground">
