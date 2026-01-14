@@ -86,7 +86,7 @@ export default function OwnersPage() {
                         if (!row['Name'] || !row['Percentage (e.g. 0.88)']) continue;
 
                         const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
-                        const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)']) || 0;
+                        const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
                         const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
                         const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
                         const eld = parseFloat(row['ELD']) || 0;
@@ -96,7 +96,7 @@ export default function OwnersPage() {
 
                         const newOwner = {
                             name: row['Name'],
-                            unitId: row['Unit ID'] || '',
+                            unitId: row['Unit ID'] || row['unit id'] || '',
                             percentage,
                             fuelRebate,
                             recurringDeductions: {
