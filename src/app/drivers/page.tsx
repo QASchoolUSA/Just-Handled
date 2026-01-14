@@ -21,7 +21,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { DriverForm } from '@/components/driver-form';
 import type { Driver } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, toTitleCase } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -296,7 +296,7 @@ export default function DriversPage() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
-                          <span className="font-medium">{`${driver.firstName} ${driver.lastName}`}</span>
+                          <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
                           <span className="text-xs text-muted-foreground font-normal">{driver.email}</span>
                         </div>
                       </div>
