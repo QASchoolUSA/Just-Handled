@@ -26,7 +26,9 @@ import type { Owner } from '@/lib/types';
 
 const formSchema = z.object({
     name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+    unitId: z.string().optional(),
     percentage: z.coerce.number().min(0, { message: 'Percentage must be positive.' }).max(1, { message: 'Percentage cannot exceed 1.0 (100%).' }),
+    fuelRebate: z.coerce.number().min(0).default(0),
     insurance: z.coerce.number().min(0).default(0),
     escrow: z.coerce.number().min(0).default(0),
     eld: z.coerce.number().min(0).default(0),
@@ -49,7 +51,9 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
         resolver: zodResolver(formSchema),
         defaultValues: {
             name: '',
+            unitId: '',
             percentage: 0.88,
+            fuelRebate: 0,
             insurance: 0,
             escrow: 0,
             eld: 0,
@@ -63,7 +67,9 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
         if (owner) {
             form.reset({
                 name: owner.name,
+                unitId: owner.unitId || '',
                 percentage: owner.percentage,
+                fuelRebate: owner.fuelRebate || 0,
                 insurance: owner.recurringDeductions.insurance,
                 escrow: owner.recurringDeductions.escrow,
                 eld: owner.recurringDeductions.eld || 0,
@@ -74,7 +80,9 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
         } else {
             form.reset({
                 name: '',
+                unitId: '',
                 percentage: 0.88,
+                fuelRebate: 0,
                 insurance: 0,
                 escrow: 0,
                 eld: 0,

@@ -22,7 +22,9 @@ export type Driver = {
 export type Owner = {
   id: string;
   name: string; // Company Name
+  unitId?: string;
   percentage: number; // e.g. 0.88 for 88%
+  fuelRebate: number; // e.g. weekly rebate amount
   recurringDeductions: {
     insurance: number;
     escrow: number;
