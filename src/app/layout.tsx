@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
+import { ThemeProvider } from "@/components/theme-provider"
 // import AppLayout from '@/components/app-layout'; // handled in AuthWrapper
 import { FirebaseClientProvider } from '@/firebase';
 
@@ -28,8 +29,15 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased">
         <FirebaseClientProvider>
-          <AuthWrapper>{children}</AuthWrapper>
-          <Toaster />
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <AuthWrapper>{children}</AuthWrapper>
+            <Toaster />
+          </ThemeProvider>
         </FirebaseClientProvider>
       </body>
     </html>

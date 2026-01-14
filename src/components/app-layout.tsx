@@ -9,7 +9,10 @@ import {
   Settings,
   Users,
   Truck,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { useTheme } from "next-themes"
 
 import {
   SidebarProvider,
@@ -32,6 +35,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, Sparkles, MoreHorizontal } from 'lucide-react';
@@ -40,6 +47,7 @@ import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { setTheme } = useTheme()
   const pathname = usePathname();
   const { user } = useUser();
   const auth = useAuth();
@@ -149,6 +157,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       <Sparkles className="h-4 w-4 text-amber-500" />
                       Upgrade to Pro
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="gap-2 rounded-lg cursor-pointer">
+                        <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                        <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                        <span>Theme</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuPortal>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => setTheme("light")}>
+                            Light
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setTheme("dark")}>
+                            Dark
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setTheme("system")}>
+                            System
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuPortal>
+                    </DropdownMenuSub>
+                    <DropdownMenuSeparator />
+
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="gap-2 rounded-lg text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
