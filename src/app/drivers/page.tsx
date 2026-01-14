@@ -90,71 +90,84 @@ export default function DriversPage() {
       skipEmptyLines: 'greedy',
       transformHeader: (h) => h.trim(), // Handle BOM or spaces
       complete: async (results) => {
-        if (results.data && firestore && driversCollection) {
-          const importedDrivers = results.data as any[];
-          let successCount = 0;
-          const errors: any[] = [];
+        try {
+          if (results.data && firestore && driversCollection) {
+            const importedDrivers = results.data as any[];
+            const errors: any[] = [];
+            let successCount = 0;
 
-          for (let i = 0; i < importedDrivers.length; i++) {
-            const row = importedDrivers[i];
-            // Row number in CSV (Header is 1, so data starts at 2)
-            const rowNumber = i + 2;
+            // Process in parallel for speed and to avoid hanging
+            await Promise.all(importedDrivers.map(async (row, i) => {
+              const rowNumber = i + 2;
 
-            // Robust check: Requires Name OR First Name to be present.
-            // AND Pay Type to be present.
-            const hasName = !!(row['First Name'] || row['Name']);
-            const hasPayType = !!row['Pay Type (percentage/cpm)'];
+              // Robust check: Requires Name OR First Name to be present.
+              // AND Pay Type to be present.
+              const hasName = !!(row['First Name'] || row['Name']);
+              const hasPayType = !!row['Pay Type (percentage/cpm)'];
 
-            if (!hasName || !hasPayType) {
-              // Maybe it's a completely empty row that slip through?
-              if (Object.values(row).some(v => !!v)) {
+              if (!hasName || !hasPayType) {
+                // Only report if row has some data
+                if (Object.values(row).some(v => !!v)) {
+                  errors.push({
+                    row: rowNumber,
+                    reason: `Missing required fields (Name or Pay Type). Found: ${JSON.stringify(row)}`,
+                    data: row
+                  });
+                }
+                return;
+              }
+
+              try {
+                const payType = row['Pay Type (percentage/cpm)'].toLowerCase().includes('cpm') ? 'cpm' : 'percentage';
+                const rate = parseFloat(row['Rate']) || 0;
+                const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
+                const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
+                const eld = parseFloat(row['ELD']) || 0;
+                const adminFee = parseFloat(row['Admin Fee']) || 0;
+                const fuel = parseFloat(row['Fuel']) || 0;
+                const tolls = parseFloat(row['Tolls']) || 0;
+
+                const newDriver = {
+                  firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
+                  lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
+                  unitId: row['Unit ID'] || undefined,
+                  email: row['Email'] || undefined,
+                  phoneNumber: row['Contact number'] || undefined,
+                  payType,
+                  rate,
+                  recurringDeductions: {
+                    insurance,
+                    escrow,
+                    eld,
+                    adminFee,
+                    fuel,
+                    tolls,
+                  },
+                };
+
+                await addDocumentNonBlocking(driversCollection, newDriver);
+                successCount++;
+              } catch (err: any) {
                 errors.push({
                   row: rowNumber,
-                  reason: `Missing required fields (Name or Pay Type). Found: ${JSON.stringify(row)}`,
+                  reason: `Failed to save: ${err.message}`,
                   data: row
                 });
               }
-              continue;
-            }
+            }));
 
-            const payType = row['Pay Type (percentage/cpm)'].toLowerCase().includes('cpm') ? 'cpm' : 'percentage';
-            const rate = parseFloat(row['Rate']) || 0;
-            const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
-            const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
-            const eld = parseFloat(row['ELD']) || 0;
-            const adminFee = parseFloat(row['Admin Fee']) || 0;
-            const fuel = parseFloat(row['Fuel']) || 0;
-            const tolls = parseFloat(row['Tolls']) || 0;
+            setImportResult({ success: successCount, errors });
+            setIsImportResultOpen(true);
 
-            const newDriver = {
-              firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
-              lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
-              unitId: row['Unit ID'] || undefined,
-              email: row['Email'] || undefined,
-              phoneNumber: row['Contact number'] || undefined,
-              payType,
-              rate,
-              recurringDeductions: {
-                insurance,
-                escrow,
-                eld,
-                adminFee,
-                fuel,
-                tolls,
-              },
-            };
-
-            await addDocumentNonBlocking(driversCollection, newDriver);
-            successCount++;
+            // Reset file input
+            if (fileInputRef.current) fileInputRef.current.value = '';
           }
-
-          setImportResult({ success: successCount, errors });
-          setIsImportResultOpen(true);
-
-          // Reset file input
-          if (fileInputRef.current) fileInputRef.current.value = '';
+        } catch (err) {
+          console.error("Critical import error:", err);
+          alert("A critical error occurred during import.");
+        } finally {
+          setIsImporting(false);
         }
-        setIsImporting(false);
       },
       error: (error) => {
         console.error('Error parsing CSV:', error);
