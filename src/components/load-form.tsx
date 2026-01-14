@@ -35,19 +35,32 @@ import type { Load, Driver } from '@/lib/types';
 const formSchema = z.object({
   loadNumber: z.string().min(1, { message: 'Load number is required.' }),
   driverId: z.string().min(1, { message: 'Please select a driver.' }),
+
+  // New Fields
+  pickupDate: z.string().min(1, { message: 'Pickup Date is required.' }),
+  brokerId: z.string().optional(),
+  invoiceId: z.string().min(1, { message: 'Invoice ID is required.' }),
+  invoiceDate: z.string().min(1, { message: 'Invoice Date is required.' }),
+  poNumber: z.string().optional(),
+
+  // Financials
+  miles: z.coerce.number().min(0),
   linehaul: z.coerce.number().min(0),
   fuelSurcharge: z.coerce.number().min(0),
+
+  invoiceAmount: z.coerce.number().min(0),
+  reserveAmount: z.coerce.number().min(0),
+  primeRateSurcharge: z.coerce.number().min(0).default(0),
+  transactionFee: z.coerce.number().min(0).default(0),
   factoringFee: z.coerce.number().min(0),
   advance: z.coerce.number().min(0),
-  miles: z.coerce.number().min(1, { message: 'Miles are required.' }),
+
   proofOfDelivery: z.any().optional(),
   rateConfirmation: z.any().optional(),
 });
 
 type LoadFormValues = z.infer<typeof formSchema>;
 
-// The form will now pass the full Load object (minus id) to the onSave handler
-// The handler will be responsible for file uploads and creating URLs
 type SaveableLoad = Omit<Load, 'id'>;
 
 interface LoadFormProps {
@@ -64,20 +77,30 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
     defaultValues: {
       loadNumber: '',
       driverId: '',
+      pickupDate: '',
+      brokerId: '',
+      invoiceId: '',
+      invoiceDate: '',
+      poNumber: '',
+      miles: 0,
       linehaul: 0,
       fuelSurcharge: 0,
+      invoiceAmount: 0,
+      reserveAmount: 0,
+      primeRateSurcharge: 0,
+      transactionFee: 0,
       factoringFee: 0,
       advance: 0,
-      miles: 0,
     },
   });
 
   React.useEffect(() => {
     if (isOpen) {
       if (load) {
-        // We don't populate file inputs, but we reset other fields
         form.reset({
           ...load,
+          brokerId: load.brokerId || '',
+          poNumber: load.poNumber || '',
           proofOfDelivery: undefined,
           rateConfirmation: undefined,
         });
@@ -85,11 +108,20 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
         form.reset({
           loadNumber: '',
           driverId: '',
+          pickupDate: new Date().toISOString().split('T')[0],
+          brokerId: '',
+          invoiceId: '',
+          invoiceDate: new Date().toISOString().split('T')[0],
+          poNumber: '',
+          miles: 0,
           linehaul: 0,
           fuelSurcharge: 0,
+          invoiceAmount: 0,
+          reserveAmount: 0,
+          primeRateSurcharge: 0,
+          transactionFee: 0,
           factoringFee: 0,
           advance: 0,
-          miles: 0,
           proofOfDelivery: undefined,
           rateConfirmation: undefined,
         });
@@ -98,27 +130,22 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
   }, [load, form, isOpen]);
 
   function onSubmit(values: LoadFormValues) {
-    // This is a temporary setup. The actual file objects are in `values.proofOfDelivery`
-    // and `values.rateConfirmation`. The onSave handler will need to process them.
-    // For now, we'll pass placeholder URLs if the form is being edited, or nothing if new.
     const { proofOfDelivery, rateConfirmation, ...saveableValues } = values;
 
     const dataToSave: SaveableLoad = {
-        ...saveableValues,
-        // In a real scenario, you'd upload files and get URLs here.
-        // We are passing existing URLs if they exist on the `load` prop.
-        proofOfDeliveryUrl: load?.proofOfDeliveryUrl,
-        rateConfirmationUrl: load?.rateConfirmationUrl,
+      ...saveableValues,
+      proofOfDeliveryUrl: load?.proofOfDeliveryUrl,
+      rateConfirmationUrl: load?.rateConfirmationUrl,
+      brokerId: saveableValues.brokerId || undefined,
+      poNumber: saveableValues.poNumber || '',
     };
-    
-    // In the next step, we will handle the actual file upload logic
-    // inside the onSave prop in the parent component.
+
     onSave(dataToSave);
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{load ? 'Edit Load' : 'Add Load'}</DialogTitle>
           <DialogDescription>
@@ -143,6 +170,51 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
               />
               <FormField
                 control={form.control}
+                name="invoiceId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invoice ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="INV-001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="pickupDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pickup Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="invoiceDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invoice Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
                 name="driverId"
                 render={({ field }) => (
                   <FormItem>
@@ -155,7 +227,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                       </FormControl>
                       <SelectContent>
                         {drivers.map(driver => (
-                            <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>
+                          <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -163,8 +235,36 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="brokerId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Broker ID (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Broker XYZ" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
-             <FormField
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="poNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>PO Number (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="PO-123" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
                 control={form.control}
                 name="miles"
                 render={({ field }) => (
@@ -177,14 +277,15 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                   </FormItem>
                 )}
               />
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
-               <FormField
+              <FormField
                 control={form.control}
                 name="linehaul"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Gross Linehaul</FormLabel>
+                    <FormLabel>Linehaul</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" {...field} />
                     </FormControl>
@@ -192,7 +293,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="fuelSurcharge"
                 render={({ field }) => (
@@ -206,8 +307,68 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                 )}
               />
             </div>
-             <div className="grid grid-cols-2 gap-4">
-               <FormField
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="invoiceAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invoice Amount</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="reserveAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reserve Amount</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="primeRateSurcharge"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prime Rate Surch.</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="transactionFee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Transaction Fee</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
                 control={form.control}
                 name="factoringFee"
                 render={({ field }) => (
@@ -220,7 +381,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="advance"
                 render={({ field }) => (
@@ -234,17 +395,17 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                 )}
               />
             </div>
-            
+
             <div className="space-y-4">
               <FormField
                 control={form.control}
                 name="proofOfDelivery"
-                render={({ field: { onChange, value, ...rest }}) => (
+                render={({ field: { onChange, value, ...rest } }) => (
                   <FormItem>
                     <FormLabel>Proof of Delivery (POD)</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="file" 
+                      <Input
+                        type="file"
                         onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)}
                         {...rest}
                       />
@@ -257,12 +418,12 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
               <FormField
                 control={form.control}
                 name="rateConfirmation"
-                render={({ field: { onChange, value, ...rest }}) => (
+                render={({ field: { onChange, value, ...rest } }) => (
                   <FormItem>
                     <FormLabel>Rate Confirmation</FormLabel>
                     <FormControl>
-                       <Input 
-                        type="file" 
+                      <Input
+                        type="file"
                         onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)}
                         {...rest}
                       />

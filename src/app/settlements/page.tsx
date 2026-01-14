@@ -78,6 +78,10 @@ export default function SettlementsPage() {
       ...loadData,
       proofOfDeliveryUrl: loadData.proofOfDeliveryUrl || null,
       rateConfirmationUrl: loadData.rateConfirmationUrl || null,
+      brokerId: loadData.brokerId || null,
+      poNumber: loadData.poNumber || null,
+      primeRateSurcharge: loadData.primeRateSurcharge || 0,
+      transactionFee: loadData.transactionFee || 0,
     };
 
     if (firestore && loadsCollection) {
@@ -246,9 +250,20 @@ export default function SettlementsPage() {
 
   const handleGenerateLoadTemplate = () => {
     const csvData = [
-      ['Load #', 'Driver Name', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Factoring Fee', 'Advance'],
-      ['12345', 'John Doe', '500', '1200.00', '150.00', '35.00', '0.00'],
-      ['67890', 'Jane Smith', '750', '1800.00', '200.00', '45.00', '0.00'],
+      [
+        'Load #', 'Driver Name', 'Pickup Date', 'Broker ID',
+        'Invoice ID', 'Invoice Date', 'PO Number',
+        'Miles', 'Linehaul', 'Fuel Surcharge',
+        'Invoice Amount', 'Reserve Amount', 'Prime Rate Surcharge', 'Transaction Fee',
+        'Factoring Fee', 'Advance'
+      ],
+      [
+        '12345', 'John Doe', '2025-01-01', 'BROKER-1',
+        'INV-001', '2025-01-05', 'PO-100',
+        '500', '1200.00', '150.00',
+        '1350.00', '0.00', '0.00', '0.00',
+        '35.00', '0.00'
+      ],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -291,11 +306,25 @@ export default function SettlementsPage() {
             const newLoad = {
               loadNumber: row['Load #'],
               driverId: driver.id,
+
+              pickupDate: row['Pickup Date'] || new Date().toISOString().split('T')[0],
+              brokerId: row['Broker ID'] || '',
+              invoiceId: row['Invoice ID'] || '',
+              invoiceDate: row['Invoice Date'] || new Date().toISOString().split('T')[0],
+              poNumber: row['PO Number'] || '',
+
               miles: parseFloat(row['Miles']) || 0,
               linehaul: parseFloat(row['Linehaul']) || 0,
               fuelSurcharge: parseFloat(row['Fuel Surcharge']) || 0,
+
+              invoiceAmount: parseFloat(row['Invoice Amount']) || 0,
+              reserveAmount: parseFloat(row['Reserve Amount']) || 0,
+              primeRateSurcharge: parseFloat(row['Prime Rate Surcharge']) || 0,
+              transactionFee: parseFloat(row['Transaction Fee']) || 0,
+
               factoringFee: parseFloat(row['Factoring Fee']) || 0,
               advance: parseFloat(row['Advance']) || 0,
+
               proofOfDeliveryUrl: null,
               rateConfirmationUrl: null,
             };

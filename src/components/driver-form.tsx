@@ -38,6 +38,10 @@ const formSchema = z.object({
   rate: z.coerce.number().min(0, { message: 'Rate must be a positive number.' }),
   insurance: z.coerce.number().min(0).default(0),
   escrow: z.coerce.number().min(0).default(0),
+  eld: z.coerce.number().min(0).default(0),
+  adminFee: z.coerce.number().min(0).default(0),
+  fuel: z.coerce.number().min(0).default(0),
+  tolls: z.coerce.number().min(0).default(0),
 });
 
 type DriverFormValues = z.infer<typeof formSchema>;
@@ -59,6 +63,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
       rate: 0,
       insurance: 0,
       escrow: 0,
+      eld: 0,
+      adminFee: 0,
+      fuel: 0,
+      tolls: 0,
     },
   });
 
@@ -71,6 +79,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         rate: driver.rate,
         insurance: driver.recurringDeductions.insurance,
         escrow: driver.recurringDeductions.escrow,
+        eld: driver.recurringDeductions.eld || 0,
+        adminFee: driver.recurringDeductions.adminFee || 0,
+        fuel: driver.recurringDeductions.fuel || 0,
+        tolls: driver.recurringDeductions.tolls || 0,
       });
     } else {
       form.reset({
@@ -80,6 +92,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         rate: 0.25,
         insurance: 0,
         escrow: 0,
+        eld: 0,
+        adminFee: 0,
+        fuel: 0,
+        tolls: 0,
       });
     }
   }, [driver, form, isOpen]);
@@ -90,7 +106,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{driver ? 'Edit Driver' : 'Add Driver'}</DialogTitle>
           <DialogDescription>
@@ -99,6 +115,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+            {/* Same Name/Unit/PayType fields */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -163,6 +180,7 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                 )}
               />
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -183,6 +201,64 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Weekly Escrow</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="eld"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>ELD</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="adminFee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Admin Fee</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="fuel"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Fuel</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="tolls"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tolls</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" {...field} />
                     </FormControl>

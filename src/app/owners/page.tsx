@@ -51,9 +51,9 @@ export default function OwnersPage() {
 
     const handleDownloadTemplate = () => {
         const csvData = [
-            ['Company Name', 'Percentage (%)', 'Insurance (Weekly)', 'Escrow (Weekly)'],
-            ['Acme Logistics LLC', '88', '150', '50'],
-            ['Fast Lane Inc', '85', '200', '0']
+            ['Name', 'Percentage (e.g. 0.88)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
+            ['Acme Transit LLC', '0.88', '150', '50', '35', '25', '250', '60'],
+            ['Redline Logistics', '0.90', '200', '0', '35', '0', '0', '0']
         ];
         const csv = Papa.unparse(csvData);
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -83,19 +83,26 @@ export default function OwnersPage() {
                     let successCount = 0;
 
                     for (const row of importedOwners) {
-                        // Basic validation
-                        if (!row['Company Name'] || !row['Percentage (%)']) continue;
+                        if (!row['Name'] || !row['Percentage (e.g. 0.88)']) continue;
 
-                        const percentage = (parseFloat(row['Percentage (%)']) || 88) / 100;
+                        const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
                         const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
                         const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
+                        const eld = parseFloat(row['ELD']) || 0;
+                        const adminFee = parseFloat(row['Admin Fee']) || 0;
+                        const fuel = parseFloat(row['Fuel']) || 0;
+                        const tolls = parseFloat(row['Tolls']) || 0;
 
                         const newOwner = {
-                            name: row['Company Name'],
+                            name: row['Name'],
                             percentage,
                             recurringDeductions: {
                                 insurance,
                                 escrow,
+                                eld,
+                                adminFee,
+                                fuel,
+                                tolls,
                             },
                             recurringAdditions: {},
                         };
@@ -104,7 +111,6 @@ export default function OwnersPage() {
                         successCount++;
                     }
                     alert(`Successfully imported ${successCount} owners.`);
-                    // Reset file input
                     if (fileInputRef.current) fileInputRef.current.value = '';
                 }
             },
@@ -115,15 +121,19 @@ export default function OwnersPage() {
         });
     };
 
-    const handleFormSave = async (ownerData: any) => {
+    const handleFormSave = async (ownerData: Omit<Owner, 'id' | 'recurringDeductions' | 'recurringAdditions'> & { insurance: number; escrow: number; eld: number; adminFee: number; fuel: number; tolls: number }) => {
         if (!firestore) return;
 
         const dataToSave = {
             name: ownerData.name,
-            percentage: ownerData.percentage / 100, // Convert percentage back to decimal
+            percentage: ownerData.percentage,
             recurringDeductions: {
                 insurance: ownerData.insurance,
                 escrow: ownerData.escrow,
+                eld: ownerData.eld,
+                adminFee: ownerData.adminFee,
+                fuel: ownerData.fuel,
+                tolls: ownerData.tolls,
             },
             recurringAdditions: {},
         };

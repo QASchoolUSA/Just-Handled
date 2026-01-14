@@ -52,9 +52,9 @@ export default function DriversPage() {
 
   const handleDownloadTemplate = () => {
     const csvData = [
-      ['Name', 'Unit ID', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)'],
-      ['John Doe', '101', 'percentage', '0.25', '100', '50'],
-      ['Jane Smith', '102', 'cpm', '0.65', '150', '0']
+      ['Name', 'Unit ID', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
+      ['John Doe', '101', 'percentage', '0.25', '100', '50', '35', '25', '200', '50'],
+      ['Jane Smith', '102', 'cpm', '0.65', '150', '0', '35', '0', '0', '0']
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -91,6 +91,10 @@ export default function DriversPage() {
             const rate = parseFloat(row['Rate']) || 0;
             const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
             const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
+            const eld = parseFloat(row['ELD']) || 0;
+            const adminFee = parseFloat(row['Admin Fee']) || 0;
+            const fuel = parseFloat(row['Fuel']) || 0;
+            const tolls = parseFloat(row['Tolls']) || 0;
 
             const newDriver = {
               name: row['Name'],
@@ -100,6 +104,10 @@ export default function DriversPage() {
               recurringDeductions: {
                 insurance,
                 escrow,
+                eld,
+                adminFee,
+                fuel,
+                tolls,
               },
             };
 
@@ -118,7 +126,7 @@ export default function DriversPage() {
     });
   };
 
-  const handleFormSave = async (driverData: Omit<Driver, 'id' | 'recurringDeductions'> & { insurance: number; escrow: number }) => {
+  const handleFormSave = async (driverData: Omit<Driver, 'id' | 'recurringDeductions'> & { insurance: number; escrow: number; eld: number; adminFee: number; fuel: number; tolls: number }) => {
     if (!firestore) return;
 
     const dataToSave = {
@@ -129,6 +137,10 @@ export default function DriversPage() {
       recurringDeductions: {
         insurance: driverData.insurance,
         escrow: driverData.escrow,
+        eld: driverData.eld,
+        adminFee: driverData.adminFee,
+        fuel: driverData.fuel,
+        tolls: driverData.tolls,
       },
     };
 

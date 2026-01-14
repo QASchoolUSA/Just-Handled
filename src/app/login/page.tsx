@@ -62,7 +62,7 @@ export default function LoginPage() {
                     <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center text-white shadow-lg shadow-primary/20 mb-4">
                         <Truck className="h-7 w-7" />
                     </div>
-                    <CardTitle className="font-display text-2xl font-bold">Welcome back</CardTitle>
+                    <CardTitle className="font-display text-2xl font-bold">Log in to Just Handled</CardTitle>
                     <CardDescription>
                         Enter your email to sign in to Just Handled
                     </CardDescription>
@@ -106,7 +106,7 @@ export default function LoginPage() {
                     </form>
                 </CardContent>
                 <CardFooter className="flex justify-center text-sm text-muted-foreground">
-                    Just Handled Trucking OS
+                    Just Handled
                 </CardFooter>
             </Card>
         </div>

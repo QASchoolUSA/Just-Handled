@@ -25,10 +25,14 @@ import { Input } from '@/components/ui/input';
 import type { Owner } from '@/lib/types';
 
 const formSchema = z.object({
-    name: z.string().min(2, { message: 'Company Name must be at least 2 characters.' }),
-    percentage: z.coerce.number().min(0).max(100, { message: 'Percentage must be between 0 and 100.' }),
+    name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+    percentage: z.coerce.number().min(0, { message: 'Percentage must be positive.' }).max(1, { message: 'Percentage cannot exceed 1.0 (100%).' }),
     insurance: z.coerce.number().min(0).default(0),
     escrow: z.coerce.number().min(0).default(0),
+    eld: z.coerce.number().min(0).default(0),
+    adminFee: z.coerce.number().min(0).default(0),
+    fuel: z.coerce.number().min(0).default(0),
+    tolls: z.coerce.number().min(0).default(0),
 });
 
 type OwnerFormValues = z.infer<typeof formSchema>;
@@ -45,9 +49,13 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
         resolver: zodResolver(formSchema),
         defaultValues: {
             name: '',
-            percentage: 88,
+            percentage: 0.88,
             insurance: 0,
             escrow: 0,
+            eld: 0,
+            adminFee: 0,
+            fuel: 0,
+            tolls: 0,
         },
     });
 
@@ -55,31 +63,40 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
         if (owner) {
             form.reset({
                 name: owner.name,
-                percentage: owner.percentage * 100, // Convert decimal to percentage for display
+                percentage: owner.percentage,
                 insurance: owner.recurringDeductions.insurance,
                 escrow: owner.recurringDeductions.escrow,
+                eld: owner.recurringDeductions.eld || 0,
+                adminFee: owner.recurringDeductions.adminFee || 0,
+                fuel: owner.recurringDeductions.fuel || 0,
+                tolls: owner.recurringDeductions.tolls || 0,
             });
         } else {
             form.reset({
                 name: '',
-                percentage: 88,
+                percentage: 0.88,
                 insurance: 0,
                 escrow: 0,
+                eld: 0,
+                adminFee: 0,
+                fuel: 0,
+                tolls: 0,
             });
         }
-    }, [owner, form, isOpen]);
+    }, [owner, form]);
 
-    function onSubmit(values: OwnerFormValues) {
+    const onSubmit = (values: OwnerFormValues) => {
         onSave(values);
-    }
+        onOpenChange(false);
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
-                    <DialogTitle>{owner ? 'Edit Owner' : 'Add Owner'}</DialogTitle>
+                    <DialogTitle>{owner ? 'Edit Owner' : 'Add New Owner'}</DialogTitle>
                     <DialogDescription>
-                        {owner ? 'Update the details for this owner.' : 'Add a new owner company.'}
+                        {owner ? 'Edit the details of this owner.' : 'Add a new owner to your system.'}
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
@@ -102,9 +119,9 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
                             name="percentage"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Percentage (%)</FormLabel>
+                                    <FormLabel>Percentage Split (e.g. 0.88 for 88%)</FormLabel>
                                     <FormControl>
-                                        <Input type="number" step="0.01" {...field} />
+                                        <Input type="number" step="0.01" max="1" placeholder="0.88" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -130,6 +147,64 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Weekly Escrow</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="eld"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>ELD</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="adminFee"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Admin Fee</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="fuel"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Fuel</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="tolls"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Tolls</FormLabel>
                                         <FormControl>
                                             <Input type="number" step="0.01" {...field} />
                                         </FormControl>

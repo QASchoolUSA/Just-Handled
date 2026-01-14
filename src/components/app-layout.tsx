@@ -74,7 +74,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <span className="font-display text-lg font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
                 Just Handled
               </span>
-              <span className="text-xs text-muted-foreground font-medium">Trucking OS</span>
             </div>
           </div>
         </SidebarHeader>
