@@ -87,3 +87,14 @@ export type AccountSettings = {
   fuelSurchargeRevenue: string;
   driverPayExpense: string;
 };
+
+export type ImportError = {
+  row: number;
+  data: Record<string, any>;
+  reason: string;
+};
+
+export type ImportResult = {
+  success: number;
+  errors: ImportError[];
+};

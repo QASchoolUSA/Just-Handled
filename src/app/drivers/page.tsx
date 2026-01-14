@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useRef } from 'react';
-import { PlusCircle, MoreHorizontal, Download, Upload, FileDown } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { PlusCircle, Upload, Download, MoreHorizontal, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,8 +31,12 @@ export default function DriversPage() {
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
   const { data: drivers, loading } = useCollection<Driver>(driversCollection);
 
-  const [isFormOpen, setIsFormOpen] = React.useState(false);
-  const [editingDriver, setEditingDriver] = React.useState<Driver | undefined>(undefined);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | undefined>(undefined);
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [isImportResultOpen, setIsImportResultOpen] = useState(false);
 
   const handleAddDriver = () => {
     setEditingDriver(undefined);
@@ -75,19 +82,42 @@ export default function DriversPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setIsImporting(true);
+    setImportResult(null);
+
     Papa.parse(file, {
       header: true,
-      skipEmptyLines: true,
+      skipEmptyLines: 'greedy',
+      transformHeader: (h) => h.trim(), // Handle BOM or spaces
       complete: async (results) => {
         if (results.data && firestore && driversCollection) {
           const importedDrivers = results.data as any[];
           let successCount = 0;
+          const errors: any[] = [];
 
-          for (const row of importedDrivers) {
-            // Basic validation
-            if ((!row['First Name'] && !row['Name']) || !row['Pay Type (percentage/cpm)']) continue;
+          for (let i = 0; i < importedDrivers.length; i++) {
+            const row = importedDrivers[i];
+            // Row number in CSV (Header is 1, so data starts at 2)
+            const rowNumber = i + 2;
 
-            const payType = row['Pay Type (percentage/cpm)'].toLowerCase() === 'cpm' ? 'cpm' : 'percentage';
+            // Robust check: Requires Name OR First Name to be present.
+            // AND Pay Type to be present.
+            const hasName = !!(row['First Name'] || row['Name']);
+            const hasPayType = !!row['Pay Type (percentage/cpm)'];
+
+            if (!hasName || !hasPayType) {
+              // Maybe it's a completely empty row that slip through?
+              if (Object.values(row).some(v => !!v)) {
+                errors.push({
+                  row: rowNumber,
+                  reason: `Missing required fields (Name or Pay Type). Found: ${JSON.stringify(row)}`,
+                  data: row
+                });
+              }
+              continue;
+            }
+
+            const payType = row['Pay Type (percentage/cpm)'].toLowerCase().includes('cpm') ? 'cpm' : 'percentage';
             const rate = parseFloat(row['Rate']) || 0;
             const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
             const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
@@ -117,14 +147,19 @@ export default function DriversPage() {
             await addDocumentNonBlocking(driversCollection, newDriver);
             successCount++;
           }
-          alert(`Successfully imported ${successCount} drivers.`);
+
+          setImportResult({ success: successCount, errors });
+          setIsImportResultOpen(true);
+
           // Reset file input
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
+        setIsImporting(false);
       },
       error: (error) => {
         console.error('Error parsing CSV:', error);
         alert('Error parsing CSV file. Please check the format.');
+        setIsImporting(false);
       }
     });
   };
@@ -200,8 +235,9 @@ export default function DriversPage() {
           <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl">
             <Download className="mr-2 h-4 w-4" /> Template
           </Button>
-          <Button variant="outline" onClick={handleImportClick} className="rounded-xl">
-            <Upload className="mr-2 h-4 w-4" /> Import CSV
+          <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
+            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            {isImporting ? 'Importing...' : 'Import CSV'}
           </Button>
           <Button onClick={handleAddDriver} className="rounded-xl shadow-sm hover:shadow-md transition-all">
             <PlusCircle className="mr-2 h-4 w-4" /> Add Driver
@@ -305,6 +341,58 @@ export default function DriversPage() {
         onSave={handleSaveDriver}
         driver={editingDriver}
       />
+
+      <Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Import Results</DialogTitle>
+            <DialogDescription>
+              {importResult?.success} drivers imported successfully.
+              {importResult?.errors && importResult.errors.length > 0 && ` ${importResult.errors.length} rows failed.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {importResult?.errors && importResult.errors.length > 0 ? (
+            <div className="space-y-4">
+              <div className="rounded-md bg-destructive/15 p-4">
+                <div className="flex">
+                  <AlertCircle className="h-5 w-5 text-destructive mr-2" />
+                  <div className="text-sm font-medium text-destructive">
+                    The following rows could not be imported:
+                  </div>
+                </div>
+              </div>
+              <ScrollArea className="h-[300px] rounded-md border p-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[80px]">Row</TableHead>
+                      <TableHead>Error</TableHead>
+                      <TableHead>Data</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importResult.errors.map((error, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-mono">{error.row}</TableCell>
+                        <TableCell className="text-destructive font-medium">{error.reason}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground font-mono">
+                          {JSON.stringify(error.data).slice(0, 100)}...
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-8 space-y-4">
+              <CheckCircle className="h-12 w-12 text-green-500" />
+              <p className="text-lg font-medium">All valid rows imported successfully!</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
