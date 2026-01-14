@@ -219,7 +219,6 @@ export default function DriversPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-6">Driver</TableHead>
-                <TableHead>Name</TableHead>
                 <TableHead>Unit ID</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Pay Structure</TableHead>
@@ -232,7 +231,7 @@ export default function DriversPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     Loading...
                   </TableCell>
                 </TableRow>
@@ -246,12 +245,11 @@ export default function DriversPage() {
                             {`${driver.firstName?.[0] || ''}${driver.lastName?.[0] || ''}`.toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
-                        <span>{`${driver.firstName} ${driver.lastName}`}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{`${driver.firstName} ${driver.lastName}`}</span>
+                          <span className="text-xs text-muted-foreground font-normal">{driver.email}</span>
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium text-blue-600">{driver.firstName} {driver.lastName}</div>
-                      <div className="text-xs text-muted-foreground">{driver.email}</div>
                     </TableCell>
                     <TableCell>{driver.unitId || '-'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{driver.phoneNumber || '-'}</TableCell>
@@ -291,7 +289,7 @@ export default function DriversPage() {
 
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     No drivers found.
                   </TableCell>
                 </TableRow>
