@@ -130,9 +130,9 @@ export default function DriversPage() {
                 const newDriver = {
                   firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
                   lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
-                  unitId: row['Unit ID'] || undefined,
-                  email: row['Email'] || undefined,
-                  phoneNumber: row['Contact number'] || undefined,
+                  unitId: row['Unit ID'] || '',
+                  email: row['Email'] || '',
+                  phoneNumber: row['Contact number'] || '',
                   payType,
                   rate,
                   recurringDeductions: {
