@@ -48,6 +48,15 @@ type ImportResult = {
   errors: ImportError[];
 };
 
+// --- Helper Functions ---
+const calculateDriverPay = (load: Load, driver?: Driver) => {
+  if (!driver) return 0;
+  if (driver.payType === 'percentage') {
+    return load.invoiceAmount * driver.rate;
+  }
+  return (load.miles || 0) * driver.rate;
+};
+
 export default function SettlementsPage() {
   const firestore = useFirestore();
 
@@ -254,14 +263,6 @@ export default function SettlementsPage() {
     downloadCsv(csv, `QBO_Journal_${today}.csv`);
   };
 
-  // --- CSV Import Helpers ---
-  const calculateDriverPay = (load: Load, driver?: Driver) => {
-    if (!driver) return 0;
-    if (driver.payType === 'percentage') {
-      return load.invoiceAmount * driver.rate;
-    }
-    return (load.miles || 0) * driver.rate;
-  };
 
   const loadFileInputRef = React.useRef<HTMLInputElement>(null);
   const expenseFileInputRef = React.useRef<HTMLInputElement>(null);
