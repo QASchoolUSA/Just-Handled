@@ -32,7 +32,10 @@ import {
 import type { Driver } from '@/lib/types';
 
 const formSchema = z.object({
-  name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+  firstName: z.string().min(1, { message: 'First Name is required.' }),
+  lastName: z.string().min(1, { message: 'Last Name is required.' }),
+  email: z.string().email().optional().or(z.literal('')),
+  phoneNumber: z.string().optional(),
   unitId: z.string().optional(),
   payType: z.enum(['percentage', 'cpm']),
   rate: z.coerce.number().min(0, { message: 'Rate must be a positive number.' }),
@@ -57,7 +60,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
   const form = useForm<DriverFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: '',
+      firstName: '',
+      lastName: '',
+      email: '',
+      phoneNumber: '',
       unitId: '',
       payType: 'percentage',
       rate: 0,
@@ -73,7 +79,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
   React.useEffect(() => {
     if (driver) {
       form.reset({
-        name: driver.name,
+        firstName: driver.firstName || (driver as any).name?.split(' ')[0] || '', // fallback
+        lastName: driver.lastName || (driver as any).name?.split(' ').slice(1).join(' ') || '', // fallback
+        email: driver.email || '',
+        phoneNumber: driver.phoneNumber || '',
         unitId: driver.unitId || '',
         payType: driver.payType,
         rate: driver.rate,
@@ -86,7 +95,10 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
       });
     } else {
       form.reset({
-        name: '',
+        firstName: '',
+        lastName: '',
+        email: '',
+        phoneNumber: '',
         unitId: '',
         payType: 'percentage',
         rate: 0.25,
@@ -119,17 +131,62 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="name"
+                name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Driver Name</FormLabel>
+                    <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="John Doe" {...field} />
+                      <Input placeholder="John" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="john@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl>
+                      <Input placeholder="(555) 123-4567" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="unitId"
@@ -143,6 +200,8 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                   </FormItem>
                 )}
               />
+              {/* moved Unit ID to sit next to Pay Type if needed, or keeping structure */}
+              <div className="hidden md:block"></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <FormField

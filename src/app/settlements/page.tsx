@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { LoadForm } from '@/components/load-form';
@@ -37,6 +37,17 @@ export type SettlementSummary = {
   deductions: (Expense & { isRecurring?: boolean })[];
 };
 
+type ImportError = {
+  row: number;
+  data: any;
+  reason: string;
+};
+
+type ImportResult = {
+  successCount: number;
+  errors: ImportError[];
+};
+
 export default function SettlementsPage() {
   const firestore = useFirestore();
 
@@ -54,6 +65,9 @@ export default function SettlementsPage() {
   const [editingLoad, setEditingLoad] = useState<Load | undefined>(undefined);
   const [isExpenseFormOpen, setIsExpenseFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
+
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [isImportResultOpen, setIsImportResultOpen] = useState(false);
 
   const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
 
@@ -136,7 +150,7 @@ export default function SettlementsPage() {
 
       summaryByDriver.set(driver.id, {
         driverId: driver.id,
-        driverName: driver.name,
+        driverName: `${driver.firstName} ${driver.lastName}`,
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
         netPay: 0,
@@ -295,15 +309,25 @@ export default function SettlementsPage() {
         if (results.data && firestore && loadsCollection && drivers) {
           const importedLoads = results.data as any[];
           let successCount = 0;
-          let failCount = 0;
+          const errors: ImportError[] = [];
 
-          for (const row of importedLoads) {
-            if (!row['Load #'] || !row['Driver Name']) continue;
+          for (let i = 0; i < importedLoads.length; i++) {
+            const row = importedLoads[i];
+            const rowNumber = i + 2; // +1 for 0-index, +1 for header row
 
-            const driver = drivers.find(d => d.name.toLowerCase() === row['Driver Name'].toLowerCase().trim());
+            if (!row['Load #'] || !row['Driver Name']) {
+              // specific check or just skip? Let's skip empty rows silently or add error if it looks like data
+              if (Object.values(row).some(v => !!v)) {
+                errors.push({ row: rowNumber, data: row, reason: 'Missing Load # or Driver Name' });
+              }
+              continue;
+            }
+
+            const driver = drivers.find(d =>
+              `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim()
+            );
             if (!driver) {
-              console.warn(`Driver not found for load ${row['Load #']}: ${row['Driver Name']}`);
-              failCount++;
+              errors.push({ row: rowNumber, data: row, reason: `Driver not found: "${row['Driver Name']}"` });
               continue;
             }
 
@@ -338,7 +362,10 @@ export default function SettlementsPage() {
             await addDocumentNonBlocking(loadsCollection, newLoad);
             successCount++;
           }
-          alert(`Imported ${successCount} loads. ${failCount > 0 ? `${failCount} failed (driver not found).` : ''}`);
+
+          setImportResult({ successCount, errors });
+          setIsImportResultOpen(true);
+
           if (loadFileInputRef.current) loadFileInputRef.current.value = '';
         }
       },
@@ -389,7 +416,7 @@ export default function SettlementsPage() {
             let driverId: string | undefined = undefined;
 
             if (type === 'driver' && row['Driver Name']) {
-              const driver = drivers.find(d => d.name.toLowerCase() === row['Driver Name'].toLowerCase().trim());
+              const driver = drivers.find(d => `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim());
               if (driver) {
                 driverId = driver.id;
               } else {
@@ -505,7 +532,12 @@ export default function SettlementsPage() {
                     loads.map((load) => (
                       <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
                         <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>
-                        <TableCell>{driverMap.get(load.driverId)?.name || 'Unknown'}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const d = driverMap.get(load.driverId);
+                            return d ? `${d.firstName} ${d.lastName}` : 'Unknown';
+                          })()}
+                        </TableCell>
                         <TableCell>{new Date(load.pickupDate).toLocaleDateString()}</TableCell>
                         <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>
                         <TableCell>{load.pickupLocation}</TableCell>
@@ -619,7 +651,13 @@ export default function SettlementsPage() {
                         <TableCell className="pl-6">{new Date(expense.date).toLocaleDateString()}</TableCell>
                         <TableCell className="font-medium">{expense.description}</TableCell>
                         <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'} className="rounded-md capitalize">{expense.type}</Badge></TableCell>
-                        <TableCell>{expense.driverId ? driverMap.get(expense.driverId)?.name : <span className="text-muted-foreground">-</span>}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
+                            const d = driverMap.get(expense.driverId);
+                            return d ? `${d.firstName} ${d.lastName}` : <span className="text-muted-foreground">-</span>;
+                          })()}
+                        </TableCell>
                         <TableCell>{formatCurrency(expense.amount)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -732,6 +770,47 @@ export default function SettlementsPage() {
         expense={editingExpense}
         drivers={drivers || []}
       />
+
+      <Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen}>
+        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Results</DialogTitle>
+            <DialogDescription>
+              Processing complete.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex flex-col gap-2">
+              <div className="p-4 rounded-lg bg-green-50 border border-green-100 text-green-700">
+                <span className="font-semibold">{importResult?.successCount}</span> loads imported successfully.
+              </div>
+              {importResult && importResult.errors.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-red-600">Failed to Import ({importResult.errors.length})</h4>
+                  <p className="text-sm text-muted-foreground">The following rows were skipped:</p>
+                  <div className="border rounded-md overflow-hidden text-sm">
+                    <div className="bg-muted/50 p-2 font-medium border-b flex gap-2">
+                      <span className="w-16">Row</span>
+                      <span className="flex-1">Error</span>
+                    </div>
+                    <div className="max-h-[300px] overflow-y-auto bg-card">
+                      {importResult.errors.map((error, idx) => (
+                        <div key={idx} className="p-2 border-b last:border-0 flex gap-2 hover:bg-muted/20">
+                          <span className="w-16 text-muted-foreground">#{error.row}</span>
+                          <span className="flex-1 text-red-600">{error.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsImportResultOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

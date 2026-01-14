@@ -189,7 +189,7 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                       <SelectContent>
                         {drivers.map((driver) => (
                           <SelectItem key={driver.id} value={driver.id}>
-                            {driver.name}
+                            {driver.firstName} {driver.lastName}
                           </SelectItem>
                         ))}
                       </SelectContent>

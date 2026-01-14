@@ -52,9 +52,9 @@ export default function DriversPage() {
 
   const handleDownloadTemplate = () => {
     const csvData = [
-      ['Name', 'Unit ID', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
-      ['John Doe', '101', 'percentage', '0.25', '100', '50', '35', '25', '200', '50'],
-      ['Jane Smith', '102', 'cpm', '0.65', '150', '0', '35', '0', '0', '0']
+      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
+      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '100', '50', '35', '25', '200', '50'],
+      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '150', '0', '35', '0', '0', '0']
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -85,7 +85,7 @@ export default function DriversPage() {
 
           for (const row of importedDrivers) {
             // Basic validation
-            if (!row['Name'] || !row['Pay Type (percentage/cpm)']) continue;
+            if ((!row['First Name'] && !row['Name']) || !row['Pay Type (percentage/cpm)']) continue;
 
             const payType = row['Pay Type (percentage/cpm)'].toLowerCase() === 'cpm' ? 'cpm' : 'percentage';
             const rate = parseFloat(row['Rate']) || 0;
@@ -97,8 +97,11 @@ export default function DriversPage() {
             const tolls = parseFloat(row['Tolls']) || 0;
 
             const newDriver = {
-              name: row['Name'],
+              firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
+              lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
               unitId: row['Unit ID'] || undefined,
+              email: row['Email'] || undefined,
+              phoneNumber: row['Contact number'] || undefined,
               payType,
               rate,
               recurringDeductions: {
@@ -126,34 +129,56 @@ export default function DriversPage() {
     });
   };
 
-  const handleFormSave = async (driverData: Omit<Driver, 'id' | 'recurringDeductions'> & { insurance: number; escrow: number; eld: number; adminFee: number; fuel: number; tolls: number }) => {
-    if (!firestore) return;
+  const handleSaveDriver = async (driverData: any) => {
+    if (!firestore || !driversCollection) return;
 
-    const dataToSave = {
-      name: driverData.name,
-      unitId: driverData.unitId,
-      payType: driverData.payType,
-      rate: driverData.rate,
-      recurringDeductions: {
-        insurance: driverData.insurance,
-        escrow: driverData.escrow,
-        eld: driverData.eld,
-        adminFee: driverData.adminFee,
-        fuel: driverData.fuel,
-        tolls: driverData.tolls,
-      },
-    };
-
-    if (editingDriver) {
-      const driverDoc = doc(firestore, 'drivers', editingDriver.id);
-      setDocumentNonBlocking(driverDoc, dataToSave, { merge: true });
-    } else {
-      if (driversCollection) {
-        addDocumentNonBlocking(driversCollection, dataToSave);
+    try {
+      if (editingDriver) {
+        // Update
+        const driverDoc = doc(firestore, 'drivers', editingDriver.id);
+        await setDocumentNonBlocking(driverDoc, {
+          firstName: driverData.firstName,
+          lastName: driverData.lastName,
+          email: driverData.email,
+          phoneNumber: driverData.phoneNumber,
+          unitId: driverData.unitId,
+          payType: driverData.payType,
+          rate: driverData.rate,
+          recurringDeductions: {
+            insurance: driverData.insurance,
+            escrow: driverData.escrow,
+            eld: driverData.eld,
+            adminFee: driverData.adminFee,
+            fuel: driverData.fuel,
+            tolls: driverData.tolls,
+          },
+        }, { merge: true });
+      } else {
+        // Add
+        const newDriver = {
+          firstName: driverData.firstName,
+          lastName: driverData.lastName,
+          email: driverData.email,
+          phoneNumber: driverData.phoneNumber,
+          unitId: driverData.unitId,
+          payType: driverData.payType,
+          rate: driverData.rate,
+          recurringDeductions: {
+            insurance: driverData.insurance,
+            escrow: driverData.escrow,
+            eld: driverData.eld,
+            adminFee: driverData.adminFee,
+            fuel: driverData.fuel,
+            tolls: driverData.tolls,
+          },
+        };
+        await addDocumentNonBlocking(driversCollection, newDriver);
       }
+      setIsFormOpen(false);
+    } catch (error) {
+      console.error('Error saving driver:', error);
+      alert('Failed to save driver.');
     }
-    setIsFormOpen(false);
-    setEditingDriver(undefined);
   };
 
 
@@ -194,10 +219,11 @@ export default function DriversPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-6">Driver</TableHead>
+                <TableHead>Name</TableHead>
                 <TableHead>Unit ID</TableHead>
-                <TableHead>Pay Type</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>Deductions</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Pay Structure</TableHead>
+                <TableHead className="text-right">Week Deduct</TableHead>
                 <TableHead className="w-[80px]">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -206,7 +232,7 @@ export default function DriversPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={7} className="h-24 text-center">
                     Loading...
                   </TableCell>
                 </TableRow>
@@ -217,24 +243,27 @@ export default function DriversPage() {
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9 border border-border/50">
                           <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                            {driver.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            {`${driver.firstName?.[0] || ''}${driver.lastName?.[0] || ''}`.toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
-                        <span>{driver.name}</span>
+                        <span>{`${driver.firstName} ${driver.lastName}`}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {driver.unitId ? <Badge variant="outline" className="font-mono">{driver.unitId}</Badge> : <span className="text-muted-foreground text-sm">-</span>}
+                      <div className="font-medium text-blue-600">{driver.firstName} {driver.lastName}</div>
+                      <div className="text-xs text-muted-foreground">{driver.email}</div>
                     </TableCell>
+                    <TableCell>{driver.unitId || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{driver.phoneNumber || '-'}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-medium">{driver.payType}</Badge>
+                      <div className="font-mono text-muted-foreground text-xs">
+                        {driver.payType === 'percentage'
+                          ? `${driver.rate * 100}%`
+                          : `${formatCurrency(driver.rate)}/mi`}
+                      </div>
                     </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">
-                      {driver.payType === 'percentage'
-                        ? `${driver.rate * 100}%`
-                        : `${formatCurrency(driver.rate)}/mi`}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-right text-sm text-muted-foreground">
                       <div className="flex flex-col gap-1">
                         <span className="text-xs">Ins: <span className="font-mono text-foreground">{formatCurrency(driver.recurringDeductions.insurance)}</span></span>
                         <span className="text-xs">Esc: <span className="font-mono text-foreground">{formatCurrency(driver.recurringDeductions.escrow)}</span></span>
@@ -275,7 +304,7 @@ export default function DriversPage() {
       <DriverForm
         isOpen={isFormOpen}
         onOpenChange={setIsFormOpen}
-        onSave={handleFormSave}
+        onSave={handleSaveDriver}
         driver={editingDriver}
       />
     </div>
