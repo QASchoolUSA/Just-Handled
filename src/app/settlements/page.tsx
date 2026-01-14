@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -12,6 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -26,6 +29,7 @@ import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
 
 export type SettlementSummary = {
   driverId: string;
@@ -57,6 +61,19 @@ const calculateDriverPay = (load: Load, driver?: Driver) => {
   return (load.miles || 0) * driver.rate;
 };
 
+const TABLE_COLUMNS = [
+  { id: 'loadNumber', label: 'Load #' },
+  { id: 'driver', label: 'Driver' },
+  { id: 'pickupDate', label: 'Pickup Date' },
+  { id: 'deliveryDate', label: 'Delivery Date' },
+  { id: 'pickupLocation', label: 'Pick Up Location' },
+  { id: 'deliveryLocation', label: 'Delivery Location' },
+  { id: 'invoiceAmount', label: 'Invoice Amt' },
+  { id: 'totalPay', label: 'Total Pay' },
+  { id: 'advance', label: 'Advance' },
+  { id: 'attachments', label: 'Attachments' },
+];
+
 export default function SettlementsPage() {
   const firestore = useFirestore();
 
@@ -75,10 +92,34 @@ export default function SettlementsPage() {
   const [isExpenseFormOpen, setIsExpenseFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
 
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
+
+  // Filter loads based on search query
+  const filteredLoads = useMemo(() => {
+    if (!loads) return [];
+    if (!searchQuery.trim()) return loads;
+
+    const query = searchQuery.toLowerCase();
+    return loads.filter(load => {
+      const driver = driverMap.get(load.driverId);
+      const driverName = driver ? `${driver.firstName} ${driver.lastName}`.toLowerCase() : '';
+
+      return (
+        load.loadNumber.toLowerCase().includes(query) ||
+        driverName.includes(query) ||
+        load.pickupLocation.toLowerCase().includes(query) ||
+        load.deliveryLocation.toLowerCase().includes(query)
+      );
+    });
+  }, [loads, searchQuery, driverMap]);
+
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
 
-  const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
+
 
   // --- Load Management ---
   const handleAddLoad = () => {
@@ -483,7 +524,45 @@ export default function SettlementsPage() {
                 <CardTitle className="font-display">Weekly Loads</CardTitle>
                 <CardDescription>All loads completed this settlement period.</CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <div className="relative w-64 mr-2">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search loads..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8 h-9"
+                  />
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="rounded-lg">
+                      <Columns className="mr-2 h-4 w-4" /> Columns
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-[150px]">
+                    <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {TABLE_COLUMNS.map((column) => (
+                      <DropdownMenuCheckboxItem
+                        key={column.id}
+                        className="capitalize"
+                        checked={visibleColumns.has(column.id)}
+                        onCheckedChange={(checked) => {
+                          const newResult = new Set(visibleColumns);
+                          if (checked) {
+                            newResult.add(column.id);
+                          } else {
+                            newResult.delete(column.id);
+                          }
+                          setVisibleColumns(newResult);
+                        }}
+                      >
+                        {column.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <input type="file" accept=".csv" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
                 <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg">
                   <Download className="mr-2 h-4 w-4" /> Template
@@ -500,17 +579,17 @@ export default function SettlementsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-muted/10">
-                    <TableHead className="pl-6">Load #</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>Pickup Date</TableHead>
-                    <TableHead>Delivery Date</TableHead>
-                    <TableHead>Origin</TableHead>
-                    <TableHead>Destination</TableHead>
+                    {visibleColumns.has('loadNumber') && <TableHead className="pl-6">Load #</TableHead>}
+                    {visibleColumns.has('driver') && <TableHead>Driver</TableHead>}
+                    {visibleColumns.has('pickupDate') && <TableHead>Pickup Date</TableHead>}
+                    {visibleColumns.has('deliveryDate') && <TableHead>Delivery Date</TableHead>}
+                    {visibleColumns.has('pickupLocation') && <TableHead>Pick Up Location</TableHead>}
+                    {visibleColumns.has('deliveryLocation') && <TableHead>Delivery Location</TableHead>}
 
-                    <TableHead>Invoice Amt</TableHead>
-                    <TableHead>Total Pay</TableHead>
-                    <TableHead>Advance</TableHead>
-                    <TableHead>Attachments</TableHead>
+                    {visibleColumns.has('invoiceAmount') && <TableHead>Invoice Amt</TableHead>}
+                    {visibleColumns.has('totalPay') && <TableHead>Total Pay</TableHead>}
+                    {visibleColumns.has('advance') && <TableHead>Advance</TableHead>}
+                    {visibleColumns.has('attachments') && <TableHead>Attachments</TableHead>}
                     <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -518,72 +597,79 @@ export default function SettlementsPage() {
                   {isLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                        <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                        {visibleColumns.has('loadNumber') && <TableCell><Skeleton className="h-4 w-12" /></TableCell>}
+                        {visibleColumns.has('driver') && <TableCell><Skeleton className="h-4 w-24" /></TableCell>}
+                        {visibleColumns.has('pickupDate') && <TableCell><Skeleton className="h-4 w-12" /></TableCell>}
+                        {visibleColumns.has('deliveryDate') && <TableCell><Skeleton className="h-4 w-16" /></TableCell>}
+                        {visibleColumns.has('pickupLocation') && <TableCell><Skeleton className="h-4 w-16" /></TableCell>}
+                        {visibleColumns.has('deliveryLocation') && <TableCell><Skeleton className="h-4 w-16" /></TableCell>}
+                        {visibleColumns.has('invoiceAmount') && <TableCell><Skeleton className="h-4 w-16" /></TableCell>}
+                        {visibleColumns.has('totalPay') && <TableCell><Skeleton className="h-8 w-8" /></TableCell>}
+                        {visibleColumns.has('advance') && <TableCell><Skeleton className="h-4 w-12" /></TableCell>}
+                        {visibleColumns.has('attachments') && <TableCell><Skeleton className="h-8 w-8 rounded-full" /></TableCell>}
                         <TableCell><Skeleton className="h-8 w-8 rounded-full" /></TableCell>
                       </TableRow>
                     ))
-                  ) : loads && loads.length > 0 ? (
-                    loads.map((load) => (
+                  ) : filteredLoads && filteredLoads.length > 0 ? (
+                    filteredLoads.map((load) => (
                       <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
-                        <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            const d = driverMap.get(load.driverId);
-                            return d ? `${d.firstName} ${d.lastName}` : 'Unknown';
-                          })()}
-                        </TableCell>
-                        <TableCell>{new Date(load.pickupDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{load.pickupLocation}</TableCell>
-                        <TableCell>{load.deliveryLocation}</TableCell>
-                        <TableCell>{load.deliveryLocation}</TableCell>
-                        <TableCell>{formatCurrency(load.invoiceAmount)}</TableCell>
-                        <TableCell className="font-semibold text-green-600">
-                          {formatCurrency(calculateDriverPay(load, driverMap.get(load.driverId)))}
-                        </TableCell>
-                        <TableCell>{formatCurrency(load.advance)}</TableCell>
-                        <TableCell>
-                          {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full">
-                                  <Paperclip className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                {/* ... existing dialog content can stay simple ... */}
-                                <DialogHeader>
-                                  <DialogTitle>Attachments for Load #{load.loadNumber}</DialogTitle>
-                                </DialogHeader>
-                                <div className="py-4 space-y-4">
-                                  {load.proofOfDeliveryUrl && (
-                                    <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                      <h4 className="font-semibold mb-1 text-sm">Proof of Delivery</h4>
-                                      <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
-                                        View POD
-                                      </a>
-                                    </div>
-                                  )}
-                                  {load.rateConfirmationUrl && (
-                                    <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                      <h4 className="font-semibold mb-1 text-sm">Rate Confirmation</h4>
-                                      <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
-                                        View Rate Con
-                                      </a>
-                                    </div>
-                                  )}
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          )}
-                        </TableCell>
+                        {visibleColumns.has('loadNumber') && <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>}
+                        {visibleColumns.has('driver') && (
+                          <TableCell>
+                            {(() => {
+                              const d = driverMap.get(load.driverId);
+                              return d ? `${d.firstName} ${d.lastName}` : 'Unknown';
+                            })()}
+                          </TableCell>
+                        )}
+                        {visibleColumns.has('pickupDate') && <TableCell>{new Date(load.pickupDate).toLocaleDateString()}</TableCell>}
+                        {visibleColumns.has('deliveryDate') && <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>}
+                        {visibleColumns.has('pickupLocation') && <TableCell>{load.pickupLocation}</TableCell>}
+                        {visibleColumns.has('deliveryLocation') && <TableCell>{load.deliveryLocation}</TableCell>}
+                        {visibleColumns.has('invoiceAmount') && <TableCell>{formatCurrency(load.invoiceAmount)}</TableCell>}
+                        {visibleColumns.has('totalPay') && (
+                          <TableCell className="font-semibold text-green-600">
+                            {formatCurrency(calculateDriverPay(load, driverMap.get(load.driverId)))}
+                          </TableCell>
+                        )}
+                        {visibleColumns.has('advance') && <TableCell>{formatCurrency(load.advance)}</TableCell>}
+                        {visibleColumns.has('attachments') && (
+                          <TableCell>
+                            {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full">
+                                    <Paperclip className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  {/* ... existing dialog content can stay simple ... */}
+                                  <DialogHeader>
+                                    <DialogTitle>Attachments for Load #{load.loadNumber}</DialogTitle>
+                                  </DialogHeader>
+                                  <div className="py-4 space-y-4">
+                                    {load.proofOfDeliveryUrl && (
+                                      <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                        <h4 className="font-semibold mb-1 text-sm">Proof of Delivery</h4>
+                                        <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
+                                          View POD
+                                        </a>
+                                      </div>
+                                    )}
+                                    {load.rateConfirmationUrl && (
+                                      <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                        <h4 className="font-semibold mb-1 text-sm">Rate Confirmation</h4>
+                                        <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
+                                          View Rate Con
+                                        </a>
+                                      </div>
+                                    )}
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
