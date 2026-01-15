@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, isWithinInterval, parseISO } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -95,15 +96,71 @@ export default function SettlementsPage() {
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 })); // Monday start
+
+  const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
+
+  const handlePrevWeek = () => setSelectedWeek(prev => subWeeks(prev, 1));
+  const handleNextWeek = () => setSelectedWeek(prev => addWeeks(prev, 1));
+
+  // --- Column Resizing ---
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    loadNumber: 100,
+    driver: 180,
+    pickupDate: 120,
+    deliveryDate: 120,
+    pickupLocation: 200,
+    deliveryLocation: 200,
+    invoiceAmount: 120,
+    totalPay: 120,
+    advance: 100,
+    attachments: 120,
+  });
+
+  const [resizingColId, setResizingColId] = useState<string | null>(null);
+
+  const handleResizeStart = (e: React.MouseEvent, colId: string) => {
+    e.preventDefault();
+    setResizingColId(colId);
+    const startX = e.clientX;
+    const startWidth = colWidths[colId] || 100;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      setColWidths(prev => ({
+        ...prev,
+        [colId]: Math.max(50, startWidth + delta), // Minimum width 50px
+      }));
+    };
+
+    const handleMouseUp = () => {
+      setResizingColId(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
 
-  // Filter loads based on search query
+  // Filter loads based on search query and selected week
   const filteredLoads = useMemo(() => {
     if (!loads) return [];
-    if (!searchQuery.trim()) return loads;
 
-    const query = searchQuery.toLowerCase();
+    const weekInterval = { start: weekStart, end: weekEnd };
+
     return loads.filter(load => {
+      // Date Filter: deliveryDate must be within selected week
+      const loadDate = parseISO(load.deliveryDate);
+      if (!isWithinInterval(loadDate, weekInterval)) return false;
+
+      // Search Query Filter
+      if (!searchQuery.trim()) return true;
+
+      const query = searchQuery.toLowerCase();
       const driver = driverMap.get(load.driverId);
       const driverName = driver ? `${driver.firstName} ${driver.lastName}`.toLowerCase() : '';
 
@@ -114,7 +171,7 @@ export default function SettlementsPage() {
         load.deliveryLocation.toLowerCase().includes(query)
       );
     });
-  }, [loads, searchQuery, driverMap]);
+  }, [loads, searchQuery, driverMap, weekStart, weekEnd]);
 
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
@@ -191,11 +248,13 @@ export default function SettlementsPage() {
     if (!drivers || !loads || !expenses) return [];
 
     const summaryByDriver: Map<string, SettlementSummary> = new Map();
+    const weekInterval = { start: weekStart, end: weekEnd };
+    const recurringDate = weekEnd.toISOString(); // Use end of week for recurring deductions
 
     drivers.forEach(driver => {
       const recurringDeductions = [
-        { id: `ins-${driver.id}`, description: 'Weekly Insurance', amount: driver.recurringDeductions.insurance, type: 'driver' as const, date: new Date().toISOString(), driverId: driver.id, isRecurring: true },
-        { id: `esc-${driver.id}`, description: 'Weekly Escrow', amount: driver.recurringDeductions.escrow, type: 'driver' as const, date: new Date().toISOString(), driverId: driver.id, isRecurring: true }
+        { id: `ins-${driver.id}`, description: 'Weekly Insurance', amount: driver.recurringDeductions.insurance, type: 'driver' as const, date: recurringDate, driverId: driver.id, isRecurring: true },
+        { id: `esc-${driver.id}`, description: 'Weekly Escrow', amount: driver.recurringDeductions.escrow, type: 'driver' as const, date: recurringDate, driverId: driver.id, isRecurring: true }
       ].filter(d => d.amount > 0);
 
       summaryByDriver.set(driver.id, {
@@ -210,6 +269,9 @@ export default function SettlementsPage() {
     });
 
     loads.forEach(load => {
+      // Filter load by week
+      if (!isWithinInterval(parseISO(load.deliveryDate), weekInterval)) return;
+
       const driver = driverMap.get(load.driverId);
       const summary = summaryByDriver.get(load.driverId);
       if (driver && summary) {
@@ -220,6 +282,9 @@ export default function SettlementsPage() {
     });
 
     expenses.forEach(expense => {
+      // Filter expense by week
+      if (!isWithinInterval(parseISO(expense.date), weekInterval)) return;
+
       if (expense.type === 'driver' && expense.driverId) {
         const summary = summaryByDriver.get(expense.driverId);
         if (summary) {
@@ -234,7 +299,7 @@ export default function SettlementsPage() {
     });
 
     return Array.from(summaryByDriver.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
-  }, [loads, expenses, drivers, driverMap]);
+  }, [loads, expenses, drivers, driverMap, weekStart, weekEnd]);
 
 
   // --- CSV Export ---
@@ -499,6 +564,23 @@ export default function SettlementsPage() {
           <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Weekly Settlement Wizard</h1>
           <p className="text-muted-foreground text-lg">Input weekly loads and expenses to generate QBO-ready CSV files.</p>
         </div>
+
+        {/* Week Picker */}
+        <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-xl border border-border/40">
+          <Button variant="ghost" size="icon" onClick={handlePrevWeek} className="h-8 w-8 rounded-lg">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex items-center gap-2 px-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-sm tabular-nums">
+              {format(weekStart, 'MMM d, yyyy')} - {format(weekEnd, 'MMM d, yyyy')}
+            </span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={handleNextWeek} className="h-8 w-8 rounded-lg">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
         <div className="flex gap-2">
           <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Invoices
@@ -575,21 +657,30 @@ export default function SettlementsPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
-              <Table>
+            <CardContent className="p-0 overflow-auto">
+              <Table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent bg-muted/10">
-                    {visibleColumns.has('loadNumber') && <TableHead className="pl-6">Load #</TableHead>}
-                    {visibleColumns.has('driver') && <TableHead>Driver</TableHead>}
-                    {visibleColumns.has('pickupDate') && <TableHead>Pickup Date</TableHead>}
-                    {visibleColumns.has('deliveryDate') && <TableHead>Delivery Date</TableHead>}
-                    {visibleColumns.has('pickupLocation') && <TableHead>Pick Up Location</TableHead>}
-                    {visibleColumns.has('deliveryLocation') && <TableHead>Delivery Location</TableHead>}
+                    {TABLE_COLUMNS.map(column => visibleColumns.has(column.id) && (
+                      <TableHead
+                        key={column.id}
+                        style={{ width: colWidths[column.id], position: 'relative' }}
+                        className={`transition-colors duration-200 group ${column.id === 'loadNumber' ? 'pl-6' : ''
+                          } ${resizingColId === column.id ? 'bg-muted/50 border-r-2 border-primary' : ''}`}
+                      >
+                        <div className="flex items-center justify-between h-full">
+                          <span className="">{column.label}</span>
 
-                    {visibleColumns.has('invoiceAmount') && <TableHead>Invoice Amt</TableHead>}
-                    {visibleColumns.has('totalPay') && <TableHead>Total Pay</TableHead>}
-                    {visibleColumns.has('advance') && <TableHead>Advance</TableHead>}
-                    {visibleColumns.has('attachments') && <TableHead>Attachments</TableHead>}
+                          {/* Resize Handle */}
+                          <div
+                            className={`absolute right-0 top-0 bottom-0 w-4 flex items-center justify-center cursor-col-resize select-none opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity ${resizingColId === column.id ? 'opacity-100' : ''}`}
+                            onMouseDown={(e) => handleResizeStart(e, column.id)}
+                          >
+                            <GripVertical className="h-4 w-4 text-muted-foreground/50 hover:text-primary" />
+                          </div>
+                        </div>
+                      </TableHead>
+                    ))}
                     <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -613,63 +704,65 @@ export default function SettlementsPage() {
                   ) : filteredLoads && filteredLoads.length > 0 ? (
                     filteredLoads.map((load) => (
                       <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
-                        {visibleColumns.has('loadNumber') && <TableCell className="font-medium pl-6">{load.loadNumber}</TableCell>}
-                        {visibleColumns.has('driver') && (
-                          <TableCell>
-                            {(() => {
-                              const d = driverMap.get(load.driverId);
-                              return d ? `${d.firstName} ${d.lastName}` : 'Unknown';
-                            })()}
-                          </TableCell>
-                        )}
-                        {visibleColumns.has('pickupDate') && <TableCell>{new Date(load.pickupDate).toLocaleDateString()}</TableCell>}
-                        {visibleColumns.has('deliveryDate') && <TableCell>{new Date(load.deliveryDate).toLocaleDateString()}</TableCell>}
-                        {visibleColumns.has('pickupLocation') && <TableCell>{load.pickupLocation}</TableCell>}
-                        {visibleColumns.has('deliveryLocation') && <TableCell>{load.deliveryLocation}</TableCell>}
-                        {visibleColumns.has('invoiceAmount') && <TableCell>{formatCurrency(load.invoiceAmount)}</TableCell>}
-                        {visibleColumns.has('totalPay') && (
-                          <TableCell className="font-semibold text-green-600">
-                            {formatCurrency(calculateDriverPay(load, driverMap.get(load.driverId)))}
-                          </TableCell>
-                        )}
-                        {visibleColumns.has('advance') && <TableCell>{formatCurrency(load.advance)}</TableCell>}
-                        {visibleColumns.has('attachments') && (
-                          <TableCell>
-                            {(load.proofOfDeliveryUrl || load.rateConfirmationUrl) && (
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full">
-                                    <Paperclip className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  {/* ... existing dialog content can stay simple ... */}
-                                  <DialogHeader>
-                                    <DialogTitle>Attachments for Load #{load.loadNumber}</DialogTitle>
-                                  </DialogHeader>
-                                  <div className="py-4 space-y-4">
-                                    {load.proofOfDeliveryUrl && (
-                                      <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                        <h4 className="font-semibold mb-1 text-sm">Proof of Delivery</h4>
-                                        <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
-                                          View POD
-                                        </a>
-                                      </div>
-                                    )}
-                                    {load.rateConfirmationUrl && (
-                                      <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                        <h4 className="font-semibold mb-1 text-sm">Rate Confirmation</h4>
-                                        <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
-                                          View Rate Con
-                                        </a>
-                                      </div>
-                                    )}
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-                            )}
-                          </TableCell>
-                        )}
+                        {TABLE_COLUMNS.map(column => {
+                          if (!visibleColumns.has(column.id)) return null;
+
+                          return (
+                            <TableCell key={column.id} className={`${column.id === 'loadNumber' ? 'pl-6 font-medium' : ''}`}>
+                              {(() => {
+                                switch (column.id) {
+                                  case 'loadNumber': return load.loadNumber;
+                                  case 'driver':
+                                    const d = driverMap.get(load.driverId);
+                                    return d ? `${d.firstName} ${d.lastName}` : 'Unknown';
+                                  case 'pickupDate': return new Date(load.pickupDate).toLocaleDateString();
+                                  case 'deliveryDate': return new Date(load.deliveryDate).toLocaleDateString();
+                                  case 'pickupLocation': return load.pickupLocation;
+                                  case 'deliveryLocation': return load.deliveryLocation;
+                                  case 'invoiceAmount': return formatCurrency(load.invoiceAmount);
+                                  case 'totalPay':
+                                    const pay = calculateDriverPay(load, driverMap.get(load.driverId));
+                                    return <span className="font-semibold text-green-600">{formatCurrency(pay)}</span>;
+                                  case 'advance': return formatCurrency(load.advance);
+                                  case 'attachments':
+                                    return (load.proofOfDeliveryUrl || load.rateConfirmationUrl) ? (
+                                      <Dialog>
+                                        <DialogTrigger asChild>
+                                          <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full">
+                                            <Paperclip className="h-4 w-4" />
+                                          </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                          <DialogHeader>
+                                            <DialogTitle>Attachments for Load #{load.loadNumber}</DialogTitle>
+                                          </DialogHeader>
+                                          <div className="py-4 space-y-4">
+                                            {load.proofOfDeliveryUrl && (
+                                              <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                                <h4 className="font-semibold mb-1 text-sm">Proof of Delivery</h4>
+                                                <a href={load.proofOfDeliveryUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
+                                                  View POD
+                                                </a>
+                                              </div>
+                                            )}
+                                            {load.rateConfirmationUrl && (
+                                              <div className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                                                <h4 className="font-semibold mb-1 text-sm">Rate Confirmation</h4>
+                                                <a href={load.rateConfirmationUrl} target="_blank" rel="noopener noreferrer" className="text-primary text-sm hover:underline break-all">
+                                                  View Rate Con
+                                                </a>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
+                                    ) : null;
+                                  default: return null;
+                                }
+                              })()}
+                            </TableCell>
+                          );
+                        })}
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
