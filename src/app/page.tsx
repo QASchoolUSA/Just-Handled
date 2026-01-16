@@ -10,6 +10,16 @@ import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
 
+// Helper to safely parse numbers that might have currency symbols, commas, etc.
+const safeParseNumber = (value: any): number => {
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  if (!value) return 0;
+  // Remove currency symbols, commas, whitespace
+  const cleaned = String(value).replace(/[$,\s]/g, '').trim();
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 export default function DashboardPage() {
   const firestore = useFirestore();
 
@@ -50,21 +60,26 @@ export default function DashboardPage() {
 
     const driverMap = new Map(drivers.map(d => [d.id, d]));
 
-    const totalRevenue = loads.reduce((sum, load) => sum + load.linehaul + load.fuelSurcharge, 0);
-    const totalFactoringFees = loads.reduce((sum, load) => sum + (load.factoringFee || 0), 0);
-    const companyExpenses = expenses.filter(e => e.type === 'company').reduce((sum, e) => sum + e.amount, 0);
+    // Use invoiceAmount since that's the actual field in your Load type
+    const totalRevenue = loads.reduce((sum, load) => sum + safeParseNumber(load.invoiceAmount), 0);
+    const totalFactoringFees = loads.reduce((sum, load) => sum + safeParseNumber(load.factoringFee), 0);
+    const companyExpenses = expenses.filter(e => e.type === 'company').reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
 
 
     let totalDriverGrossPay = 0;
     let totalAdvances = 0;
     loads.forEach(load => {
-      totalAdvances += load.advance || 0;
+      totalAdvances += safeParseNumber(load.advance);
       const driver = driverMap.get(load.driverId);
       if (driver) {
+        const invoiceAmt = safeParseNumber(load.invoiceAmount);
+        const miles = safeParseNumber(load.miles);
+        const driverRate = safeParseNumber(driver.rate);
+
         if (driver.payType === 'percentage') {
-          totalDriverGrossPay += load.linehaul * driver.rate;
-        } else if (driver.payType === 'cpm' && load.miles) {
-          totalDriverGrossPay += load.miles * driver.rate;
+          totalDriverGrossPay += invoiceAmt * driverRate;
+        } else if (driver.payType === 'cpm' && miles > 0) {
+          totalDriverGrossPay += miles * driverRate;
         }
       }
     });
@@ -75,9 +90,10 @@ export default function DashboardPage() {
 
     const driverSpecificDeductions = expenses
       .filter(e => e.type === 'driver' && e.driverId)
-      .reduce((sum, e) => sum + e.amount, 0);
+      .reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
 
-    const totalRecurringDeductions = drivers.reduce((sum, d) => sum + d.recurringDeductions.insurance + d.recurringDeductions.escrow, 0);
+    const totalRecurringDeductions = drivers.reduce((sum, d) =>
+      sum + safeParseNumber(d.recurringDeductions.insurance) + safeParseNumber(d.recurringDeductions.escrow), 0);
     const totalDriverDeductions = driverSpecificDeductions + totalRecurringDeductions;
 
     const accruedPayBalance = totalDriverGrossPay - totalDriverDeductions;
@@ -85,7 +101,7 @@ export default function DashboardPage() {
     const netProfit = totalRevenue - totalOperationalExpenses;
     const averageMargin = loads.length > 0 ? netProfit / loads.length : 0;
 
-    const totalMiles = loads.reduce((sum, load) => sum + (load.miles || 0), 0);
+    const totalMiles = loads.reduce((sum, load) => sum + safeParseNumber(load.miles), 0);
     const averageCpm = totalMiles > 0 ? totalOperationalExpenses / totalMiles : 0;
     const averageRpm = totalMiles > 0 ? totalRevenue / totalMiles : 0;
 
