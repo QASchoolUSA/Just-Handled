@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, isWithinInterval, parseISO } from 'date-fns';
+import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, isWithinInterval, parseISO, parse } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -154,7 +154,7 @@ export default function SettlementsPage() {
 
     return loads.filter(load => {
       // Date Filter: pickupDate must be within selected week
-      const loadDate = parseISO(load.pickupDate);
+      const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
       if (!isWithinInterval(loadDate, weekInterval)) return false;
 
       // Search Query Filter
