@@ -5,13 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route, CalendarIcon } from 'lucide-react';
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
-import { parse, subDays, isWithinInterval, format } from 'date-fns';
+import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay } from 'date-fns';
 
 // Helper to safely parse numbers that might have currency symbols, commas, etc.
 const safeParseNumber = (value: any): number => {
@@ -34,11 +36,21 @@ export default function DashboardPage() {
   const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
   const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesCollection);
 
-  type Period = '7d' | '30d' | '90d' | '180d' | '365d';
+  type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   // Calculate date range based on selected period
   const dateRange = useMemo(() => {
+    if (selectedPeriod === 'custom' && customStartDate && customEndDate) {
+      return {
+        start: startOfDay(customStartDate),
+        end: endOfDay(customEndDate)
+      };
+    }
+
     const end = new Date();
     let start: Date;
     let days: number;
@@ -59,11 +71,14 @@ export default function DashboardPage() {
       case '365d':
         days = 365;
         break;
+      case 'custom':
+        days = 30; // fallback if custom not set
+        break;
     }
 
     start = subDays(end, days);
     return { start, end };
-  }, [selectedPeriod]);
+  }, [selectedPeriod, customStartDate, customEndDate]);
 
   // Filter loads and expenses by period
   const filteredLoads = useMemo(() => {
@@ -219,14 +234,57 @@ export default function DashboardPage() {
         {/* Period Selector */}
         <div className="flex flex-wrap items-center gap-4">
           <Tabs value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as Period)}>
-            <TabsList className="grid w-full grid-cols-5 max-w-md">
+            <TabsList className="grid w-full grid-cols-6 max-w-2xl">
               <TabsTrigger value="7d">Week</TabsTrigger>
               <TabsTrigger value="30d">Month</TabsTrigger>
               <TabsTrigger value="90d">3M</TabsTrigger>
               <TabsTrigger value="180d">6M</TabsTrigger>
               <TabsTrigger value="365d">Year</TabsTrigger>
+              <TabsTrigger value="custom">Custom</TabsTrigger>
             </TabsList>
           </Tabs>
+
+          {selectedPeriod === 'custom' && (
+            <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="rounded-xl">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {customStartDate && customEndDate
+                    ? `${format(customStartDate, 'MMM d')} - ${format(customEndDate, 'MMM d, yyyy')}`
+                    : 'Pick dates'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <div className="flex flex-col gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-medium mb-2">Start Date</p>
+                    <Calendar
+                      mode="single"
+                      selected={customStartDate}
+                      onSelect={setCustomStartDate}
+                      disabled={(date) => customEndDate ? date > customEndDate : false}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">End Date</p>
+                    <Calendar
+                      mode="single"
+                      selected={customEndDate}
+                      onSelect={setCustomEndDate}
+                      disabled={(date) => customStartDate ? date < customStartDate : false}
+                    />
+                  </div>
+                  <Button
+                    onClick={() => setIsDatePickerOpen(false)}
+                    disabled={!customStartDate || !customEndDate}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
           <p className="text-sm text-muted-foreground">
             {format(dateRange.start, 'MMM d, yyyy')} - {format(dateRange.end, 'MMM d, yyyy')}
           </p>
