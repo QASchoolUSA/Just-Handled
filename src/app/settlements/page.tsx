@@ -160,25 +160,40 @@ export default function SettlementsPage() {
 
     const weekInterval = { start: weekStart, end: weekEnd };
 
-    return loads.filter(load => {
-      // Date Filter: pickupDate must be within selected week
-      const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
-      if (!isWithinInterval(loadDate, weekInterval)) return false;
+    return loads
+      .filter(load => {
+        // Date Filter: pickupDate must be within selected week
+        const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
+        if (!isWithinInterval(loadDate, weekInterval)) return false;
 
-      // Search Query Filter
-      if (!searchQuery.trim()) return true;
+        // Search Query Filter
+        if (!searchQuery.trim()) return true;
 
-      const query = searchQuery.toLowerCase();
-      const driver = driverMap.get(load.driverId);
-      const driverName = driver ? `${driver.firstName} ${driver.lastName}`.toLowerCase() : '';
+        const query = searchQuery.toLowerCase();
+        const driver = driverMap.get(load.driverId);
+        const driverName = driver ? `${driver.firstName} ${driver.lastName}`.toLowerCase() : '';
 
-      return (
-        load.loadNumber.toLowerCase().includes(query) ||
-        driverName.includes(query) ||
-        load.pickupLocation.toLowerCase().includes(query) ||
-        load.deliveryLocation.toLowerCase().includes(query)
-      );
-    });
+        return (
+          load.loadNumber.toLowerCase().includes(query) ||
+          driverName.includes(query) ||
+          load.pickupLocation.toLowerCase().includes(query) ||
+          load.deliveryLocation.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => {
+        // Sort by pickup date first
+        const dateA = parse(a.pickupDate, 'dd-MMM-yy', new Date());
+        const dateB = parse(b.pickupDate, 'dd-MMM-yy', new Date());
+
+        if (dateA.getTime() !== dateB.getTime()) {
+          return dateA.getTime() - dateB.getTime(); // Earliest first
+        }
+
+        // If pickup dates are same, sort by delivery date
+        const deliveryA = parse(a.deliveryDate, 'dd-MMM-yy', new Date());
+        const deliveryB = parse(b.deliveryDate, 'dd-MMM-yy', new Date());
+        return deliveryA.getTime() - deliveryB.getTime(); // Earliest first
+      });
   }, [loads, searchQuery, driverMap, weekStart, weekEnd]);
 
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
