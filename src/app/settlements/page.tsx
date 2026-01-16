@@ -508,6 +508,16 @@ export default function SettlementsPage() {
 
             console.log(`Matched driver: "${row['Driver Name']}" -> ${driver.firstName} ${driver.lastName}`);
 
+            // Auto-update driver's Unit ID if it changed
+            const loadTruckId = row['Truck ID']?.trim();
+            if (loadTruckId && driver.unitId !== loadTruckId) {
+              console.log(`Updating ${driver.firstName} ${driver.lastName}'s Unit ID: "${driver.unitId}" -> "${loadTruckId}"`);
+              const driverDoc = doc(firestore, 'drivers', driver.id);
+              await setDocumentNonBlocking(driverDoc, { unitId: loadTruckId }, { merge: true });
+              // Update local driver object for subsequent loads in same import
+              driver.unitId = loadTruckId;
+            }
+
             // Helper to parse numbers that might have currency symbols, commas, etc.
             const parseNumber = (value: string | number): number => {
               if (typeof value === 'number') return value;
