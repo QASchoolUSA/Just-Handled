@@ -484,13 +484,29 @@ export default function SettlementsPage() {
               continue;
             }
 
-            const driver = drivers.find(d =>
-              `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim()
-            );
+            // Normalize the driver name from CSV
+            const csvDriverName = String(row['Driver Name']).toLowerCase().trim();
+
+            // Find driver with flexible matching
+            const driver = drivers.find(d => {
+              const dbDriverName = `${d.firstName} ${d.lastName}`.toLowerCase().trim();
+              return dbDriverName === csvDriverName;
+            });
+
             if (!driver) {
-              errors.push({ row: rowNumber, data: row, reason: `Driver not found: "${row['Driver Name']}"` });
+              // Log available drivers for debugging
+              console.warn(`Driver not found for: "${row['Driver Name']}"`);
+              console.warn('Available drivers:', drivers.map(d => `${d.firstName} ${d.lastName}`));
+
+              errors.push({
+                row: rowNumber,
+                data: row,
+                reason: `Driver not found: "${row['Driver Name']}". Check spelling and format (e.g., "John Doe").`
+              });
               continue;
             }
+
+            console.log(`Matched driver: "${row['Driver Name']}" -> ${driver.firstName} ${driver.lastName}`);
 
             // Helper to parse numbers that might have currency symbols, commas, etc.
             const parseNumber = (value: string | number): number => {
