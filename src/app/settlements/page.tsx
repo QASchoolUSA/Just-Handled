@@ -153,8 +153,8 @@ export default function SettlementsPage() {
     const weekInterval = { start: weekStart, end: weekEnd };
 
     return loads.filter(load => {
-      // Date Filter: deliveryDate must be within selected week
-      const loadDate = parseISO(load.deliveryDate);
+      // Date Filter: pickupDate must be within selected week
+      const loadDate = parseISO(load.pickupDate);
       if (!isWithinInterval(loadDate, weekInterval)) return false;
 
       // Search Query Filter
