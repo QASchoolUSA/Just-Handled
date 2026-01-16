@@ -53,6 +53,7 @@ type ImportError = {
 type ImportResult = {
   successCount: number;
   errors: ImportError[];
+  skippedCount?: number;
 };
 
 // --- Helper Functions ---
@@ -470,7 +471,12 @@ export default function SettlementsPage() {
         if (results.data && firestore && loadsCollection && drivers) {
           const importedLoads = results.data as any[];
           let successCount = 0;
+          let skippedCount = 0;
           const errors: ImportError[] = [];
+          const skipped: Array<{ row: number; loadNumber: string }> = [];
+
+          // Get existing load numbers for duplicate detection
+          const existingLoadNumbers = new Set(loads?.map(l => l.loadNumber) || []);
 
           for (let i = 0; i < importedLoads.length; i++) {
             const row = importedLoads[i];
@@ -481,6 +487,15 @@ export default function SettlementsPage() {
               if (Object.values(row).some(v => !!v)) {
                 errors.push({ row: rowNumber, data: row, reason: 'Missing Load # or Driver Name' });
               }
+              continue;
+            }
+
+            // Check for duplicates
+            const loadNumber = row['Load #'].toString().trim();
+            if (existingLoadNumbers.has(loadNumber)) {
+              console.log(`Skipping duplicate load: ${loadNumber}`);
+              skipped.push({ row: rowNumber, loadNumber });
+              skippedCount++;
               continue;
             }
 
@@ -563,10 +578,11 @@ export default function SettlementsPage() {
             });
 
             await addDocumentNonBlocking(loadsCollection, newLoad);
+            existingLoadNumbers.add(loadNumber); // Add to set for current import session
             successCount++;
           }
 
-          setImportResult({ successCount, errors });
+          setImportResult({ successCount, errors, skippedCount });
           setIsImportResultOpen(true);
 
           if (loadFileInputRef.current) loadFileInputRef.current.value = '';
@@ -1077,6 +1093,11 @@ export default function SettlementsPage() {
               <div className="p-4 rounded-lg bg-green-50 border border-green-100 text-green-700">
                 <span className="font-semibold">{importResult?.successCount}</span> loads imported successfully.
               </div>
+              {importResult && importResult.skippedCount && importResult.skippedCount > 0 && (
+                <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-100 text-yellow-700">
+                  <span className="font-semibold">{importResult.skippedCount}</span> duplicate loads skipped (already exist).
+                </div>
+              )}
               {importResult && importResult.errors.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="font-semibold text-red-600">Failed to Import ({importResult.errors.length})</h4>
