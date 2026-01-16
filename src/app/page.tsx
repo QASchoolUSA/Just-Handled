@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route } from 'lucide-react';
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
+import { parse, subDays, isWithinInterval, format } from 'date-fns';
 
 // Helper to safely parse numbers that might have currency symbols, commas, etc.
 const safeParseNumber = (value: any): number => {
@@ -30,6 +33,62 @@ export default function DashboardPage() {
   const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsCollection);
   const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
   const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesCollection);
+
+  type Period = '7d' | '30d' | '90d' | '180d' | '365d';
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
+
+  // Calculate date range based on selected period
+  const dateRange = useMemo(() => {
+    const end = new Date();
+    let start: Date;
+    let days: number;
+
+    switch (selectedPeriod) {
+      case '7d':
+        days = 7;
+        break;
+      case '30d':
+        days = 30;
+        break;
+      case '90d':
+        days = 90;
+        break;
+      case '180d':
+        days = 180;
+        break;
+      case '365d':
+        days = 365;
+        break;
+    }
+
+    start = subDays(end, days);
+    return { start, end };
+  }, [selectedPeriod]);
+
+  // Filter loads and expenses by period
+  const filteredLoads = useMemo(() => {
+    if (!loads) return [];
+    return loads.filter(load => {
+      try {
+        const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
+        return isWithinInterval(loadDate, dateRange);
+      } catch {
+        return false;
+      }
+    });
+  }, [loads, dateRange]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!expenses) return [];
+    return expenses.filter(expense => {
+      try {
+        const expenseDate = parse(expense.date, 'dd-MMM-yy', new Date());
+        return isWithinInterval(expenseDate, dateRange);
+      } catch {
+        return false;
+      }
+    });
+  }, [expenses, dateRange]);
 
   const {
     totalRevenue,
@@ -54,21 +113,21 @@ export default function DashboardPage() {
       averageRpm: 0
     };
 
-    if (!loads || !drivers || !expenses) {
+    if (!filteredLoads || !drivers || !filteredExpenses) {
       return initialMetrics;
     }
 
     const driverMap = new Map(drivers.map(d => [d.id, d]));
 
     // Use invoiceAmount since that's the actual field in your Load type
-    const totalRevenue = loads.reduce((sum, load) => sum + safeParseNumber(load.invoiceAmount), 0);
-    const totalFactoringFees = loads.reduce((sum, load) => sum + safeParseNumber(load.factoringFee), 0);
-    const companyExpenses = expenses.filter(e => e.type === 'company').reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
+    const totalRevenue = filteredLoads.reduce((sum, load) => sum + safeParseNumber(load.invoiceAmount), 0);
+    const totalFactoringFees = filteredLoads.reduce((sum, load) => sum + safeParseNumber(load.factoringFee), 0);
+    const companyExpenses = filteredExpenses.filter(e => e.type === 'company').reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
 
 
     let totalDriverGrossPay = 0;
     let totalAdvances = 0;
-    loads.forEach(load => {
+    filteredLoads.forEach(load => {
       totalAdvances += safeParseNumber(load.advance);
       const driver = driverMap.get(load.driverId);
       if (driver) {
@@ -88,7 +147,7 @@ export default function DashboardPage() {
     const totalOperationalExpenses = companyExpenses + totalFactoringFees + totalDriverGrossPay;
 
 
-    const driverSpecificDeductions = expenses
+    const driverSpecificDeductions = filteredExpenses
       .filter(e => e.type === 'driver' && e.driverId)
       .reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
 
@@ -99,9 +158,9 @@ export default function DashboardPage() {
     const accruedPayBalance = totalDriverGrossPay - totalDriverDeductions;
 
     const netProfit = totalRevenue - totalOperationalExpenses;
-    const averageMargin = loads.length > 0 ? netProfit / loads.length : 0;
+    const averageMargin = filteredLoads.length > 0 ? netProfit / filteredLoads.length : 0;
 
-    const totalMiles = loads.reduce((sum, load) => sum + safeParseNumber(load.miles), 0);
+    const totalMiles = filteredLoads.reduce((sum, load) => sum + safeParseNumber(load.miles), 0);
     const averageCpm = totalMiles > 0 ? totalOperationalExpenses / totalMiles : 0;
     const averageRpm = totalMiles > 0 ? totalRevenue / totalMiles : 0;
 
@@ -117,7 +176,7 @@ export default function DashboardPage() {
       averageCpm,
       averageRpm
     };
-  }, [loads, drivers, expenses]);
+  }, [filteredLoads, drivers, filteredExpenses]);
 
   const isLoading = loadsLoading || driversLoading || expensesLoading;
 
@@ -147,13 +206,31 @@ export default function DashboardPage() {
 
   return (
     <div className="container mx-auto py-8 space-y-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-600 to-indigo-600 w-fit">
-          Health Check Dashboard
-        </h1>
-        <p className="text-muted-foreground text-lg max-w-2xl">
-          Weekly snapshot of your company's financial health and verification status.
-        </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-600 to-indigo-600 w-fit">
+            Health Check Dashboard
+          </h1>
+          <p className="text-muted-foreground text-lg max-w-2xl">
+            Weekly snapshot of your company's financial health and verification status.
+          </p>
+        </div>
+
+        {/* Period Selector */}
+        <div className="flex flex-wrap items-center gap-4">
+          <Tabs value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as Period)}>
+            <TabsList className="grid w-full grid-cols-5 max-w-md">
+              <TabsTrigger value="7d">Week</TabsTrigger>
+              <TabsTrigger value="30d">Month</TabsTrigger>
+              <TabsTrigger value="90d">3M</TabsTrigger>
+              <TabsTrigger value="180d">6M</TabsTrigger>
+              <TabsTrigger value="365d">Year</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="text-sm text-muted-foreground">
+            {format(dateRange.start, 'MMM d, yyyy')} - {format(dateRange.end, 'MMM d, yyyy')}
+          </p>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">

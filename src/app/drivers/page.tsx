@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { PlusCircle, Upload, Download, MoreHorizontal, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useRef, useState, useMemo } from 'react';
+import { PlusCircle, Upload, Download, MoreHorizontal, Loader2, AlertCircle, CheckCircle, Search, ArrowUpDown } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -38,6 +39,40 @@ export default function DriversPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSortToggle = () => {
+    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Filter and sort drivers
+  const filteredAndSortedDrivers = useMemo(() => {
+    if (!drivers) return [];
+
+    let filtered = drivers;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = drivers.filter(driver => {
+        const fullName = `${driver.firstName} ${driver.lastName}`.toLowerCase();
+        const unitId = driver.unitId?.toLowerCase() || '';
+        const email = driver.email?.toLowerCase() || '';
+
+        return fullName.includes(query) || unitId.includes(query) || email.includes(query);
+      });
+    }
+
+    // Apply sort
+    return [...filtered].sort((a, b) => {
+      const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
+      const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
+      const comparison = nameA.localeCompare(nameB);
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [drivers, searchQuery, sortDirection]);
 
   const handleAddDriver = () => {
     setEditingDriver(undefined);
@@ -261,8 +296,32 @@ export default function DriversPage() {
 
       <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
         <CardHeader className="bg-muted/30 border-b border-border/40">
-          <CardTitle className="font-display">All Drivers</CardTitle>
-          <CardDescription>A directory of your current fleet.</CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="font-display">All Drivers</CardTitle>
+              <CardDescription>A directory of your current fleet.</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search drivers..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 h-9"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSortToggle}
+                className="rounded-xl"
+              >
+                <ArrowUpDown className="mr-2 h-4 w-4" />
+                {sortDirection === 'asc' ? 'A→Z' : 'Z→A'}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -285,8 +344,8 @@ export default function DriversPage() {
                     Loading...
                   </TableCell>
                 </TableRow>
-              ) : drivers.length > 0 ? (
-                drivers.map((driver) => (
+              ) : filteredAndSortedDrivers.length > 0 ? (
+                filteredAndSortedDrivers.map((driver) => (
                   <TableRow key={driver.id} className="group hover:bg-muted/50 transition-colors cursor-default">
                     <TableCell className="font-medium pl-6">
                       <div className="flex items-center gap-3">

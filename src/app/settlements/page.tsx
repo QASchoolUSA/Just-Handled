@@ -98,10 +98,10 @@ export default function SettlementsPage() {
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortColumn, setSortColumn] = useState<'pickupDate' | 'deliveryDate' | null>('pickupDate');
+  const [sortColumn, setSortColumn] = useState<'pickupDate' | 'deliveryDate' | 'driverName' | null>('pickupDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const handleSortColumn = (column: 'pickupDate' | 'deliveryDate') => {
+  const handleSortColumn = (column: 'pickupDate' | 'deliveryDate' | 'driverName') => {
     if (sortColumn === column) {
       // Toggle direction if same column
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -196,11 +196,23 @@ export default function SettlementsPage() {
       .sort((a, b) => {
         if (!sortColumn) return 0;
 
-        const dateA = parse(sortColumn === 'pickupDate' ? a.pickupDate : a.deliveryDate, 'dd-MMM-yy', new Date());
-        const dateB = parse(sortColumn === 'pickupDate' ? b.pickupDate : b.deliveryDate, 'dd-MMM-yy', new Date());
+        if (sortColumn === 'driverName') {
+          // Sort by driver name alphabetically
+          const driverA = driverMap.get(a.driverId);
+          const driverB = driverMap.get(b.driverId);
+          const nameA = driverA ? `${driverA.firstName} ${driverA.lastName}`.toLowerCase() : '';
+          const nameB = driverB ? `${driverB.firstName} ${driverB.lastName}`.toLowerCase() : '';
 
-        const diff = dateA.getTime() - dateB.getTime();
-        return sortDirection === 'asc' ? diff : -diff;
+          const comparison = nameA.localeCompare(nameB);
+          return sortDirection === 'asc' ? comparison : -comparison;
+        } else {
+          // Sort by date (pickupDate or deliveryDate)
+          const dateA = parse(sortColumn === 'pickupDate' ? a.pickupDate : a.deliveryDate, 'dd-MMM-yy', new Date());
+          const dateB = parse(sortColumn === 'pickupDate' ? b.pickupDate : b.deliveryDate, 'dd-MMM-yy', new Date());
+
+          const diff = dateA.getTime() - dateB.getTime();
+          return sortDirection === 'asc' ? diff : -diff;
+        }
       });
   }, [loads, searchQuery, driverMap, weekStart, weekEnd, sortColumn, sortDirection]);
 
@@ -818,17 +830,17 @@ export default function SettlementsPage() {
                         key={column.id}
                         style={{ width: colWidths[column.id], position: 'relative' }}
                         className={`transition-colors duration-200 group ${column.id === 'loadNumber' ? 'pl-6' : ''
-                          } ${resizingColId === column.id ? 'bg-muted/50 border-r-2 border-primary' : ''} ${(column.id === 'pickupDate' || column.id === 'deliveryDate') ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                          } ${resizingColId === column.id ? 'bg-muted/50 border-r-2 border-primary' : ''} ${(column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') ? 'cursor-pointer hover:bg-muted/30' : ''}`}
                         onClick={() => {
-                          if (column.id === 'pickupDate' || column.id === 'deliveryDate') {
-                            handleSortColumn(column.id);
+                          if (column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') {
+                            handleSortColumn(column.id as 'pickupDate' | 'deliveryDate' | 'driverName');
                           }
                         }}
                       >
                         <div className="flex items-center justify-between h-full">
                           <div className="flex items-center gap-1">
                             <span className="">{column.label}</span>
-                            {(column.id === 'pickupDate' || column.id === 'deliveryDate') && sortColumn === column.id && (
+                            {(column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') && sortColumn === column.id && (
                               <span className="text-primary font-bold">
                                 {sortDirection === 'asc' ? '↑' : '↓'}
                               </span>
