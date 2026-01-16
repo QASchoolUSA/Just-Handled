@@ -17,6 +17,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -98,11 +100,16 @@ export default function SettlementsPage() {
 
   const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 })); // Monday start
 
-  const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
+  const weekStart = useMemo(() => selectedWeek, [selectedWeek]);
+  const weekEnd = useMemo(() => endOfWeek(selectedWeek, { weekStartsOn: 1 }), [selectedWeek]);
 
   const handlePrevWeek = () => setSelectedWeek(prev => subWeeks(prev, 1));
   const handleNextWeek = () => setSelectedWeek(prev => addWeeks(prev, 1));
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      setSelectedWeek(startOfWeek(date, { weekStartsOn: 1 }));
+    }
+  };
 
   // --- Column Resizing ---
   const [colWidths, setColWidths] = useState<Record<string, number>>({
@@ -570,12 +577,29 @@ export default function SettlementsPage() {
           <Button variant="ghost" size="icon" onClick={handlePrevWeek} className="h-8 w-8 rounded-lg">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-2 px-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-sm tabular-nums">
-              {format(weekStart, 'MMM d, yyyy')} - {format(weekEnd, 'MMM d, yyyy')}
-            </span>
-          </div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" className="h-8 px-2 rounded-lg hover:bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm tabular-nums">
+                    {format(weekStart, 'MMM d, yyyy')} - {format(weekEnd, 'MMM d, yyyy')}
+                  </span>
+                </div>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="center">
+              <CalendarComponent
+                mode="single"
+                selected={selectedWeek}
+                onSelect={handleDateSelect}
+                captionLayout="dropdown"
+                fromYear={new Date().getFullYear() - 10}
+                toYear={new Date().getFullYear()}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
           <Button variant="ghost" size="icon" onClick={handleNextWeek} className="h-8 w-8 rounded-lg">
             <ChevronRight className="h-4 w-4" />
           </Button>
