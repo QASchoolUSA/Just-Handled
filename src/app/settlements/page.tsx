@@ -98,6 +98,19 @@ export default function SettlementsPage() {
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortColumn, setSortColumn] = useState<'pickupDate' | 'deliveryDate' | null>('pickupDate');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSortColumn = (column: 'pickupDate' | 'deliveryDate') => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
 
   const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 })); // Monday start
 
@@ -181,20 +194,15 @@ export default function SettlementsPage() {
         );
       })
       .sort((a, b) => {
-        // Sort by pickup date first
-        const dateA = parse(a.pickupDate, 'dd-MMM-yy', new Date());
-        const dateB = parse(b.pickupDate, 'dd-MMM-yy', new Date());
+        if (!sortColumn) return 0;
 
-        if (dateA.getTime() !== dateB.getTime()) {
-          return dateA.getTime() - dateB.getTime(); // Earliest first
-        }
+        const dateA = parse(sortColumn === 'pickupDate' ? a.pickupDate : a.deliveryDate, 'dd-MMM-yy', new Date());
+        const dateB = parse(sortColumn === 'pickupDate' ? b.pickupDate : b.deliveryDate, 'dd-MMM-yy', new Date());
 
-        // If pickup dates are same, sort by delivery date
-        const deliveryA = parse(a.deliveryDate, 'dd-MMM-yy', new Date());
-        const deliveryB = parse(b.deliveryDate, 'dd-MMM-yy', new Date());
-        return deliveryA.getTime() - deliveryB.getTime(); // Earliest first
+        const diff = dateA.getTime() - dateB.getTime();
+        return sortDirection === 'asc' ? diff : -diff;
       });
-  }, [loads, searchQuery, driverMap, weekStart, weekEnd]);
+  }, [loads, searchQuery, driverMap, weekStart, weekEnd, sortColumn, sortDirection]);
 
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
@@ -810,15 +818,28 @@ export default function SettlementsPage() {
                         key={column.id}
                         style={{ width: colWidths[column.id], position: 'relative' }}
                         className={`transition-colors duration-200 group ${column.id === 'loadNumber' ? 'pl-6' : ''
-                          } ${resizingColId === column.id ? 'bg-muted/50 border-r-2 border-primary' : ''}`}
+                          } ${resizingColId === column.id ? 'bg-muted/50 border-r-2 border-primary' : ''} ${(column.id === 'pickupDate' || column.id === 'deliveryDate') ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                        onClick={() => {
+                          if (column.id === 'pickupDate' || column.id === 'deliveryDate') {
+                            handleSortColumn(column.id);
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between h-full">
-                          <span className="">{column.label}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="">{column.label}</span>
+                            {(column.id === 'pickupDate' || column.id === 'deliveryDate') && sortColumn === column.id && (
+                              <span className="text-primary font-bold">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
 
                           {/* Resize Handle */}
                           <div
                             className={`absolute right-0 top-0 bottom-0 w-4 flex items-center justify-center cursor-col-resize select-none opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity ${resizingColId === column.id ? 'opacity-100' : ''}`}
                             onMouseDown={(e) => handleResizeStart(e, column.id)}
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <GripVertical className="h-4 w-4 text-muted-foreground/50 hover:text-primary" />
                           </div>
