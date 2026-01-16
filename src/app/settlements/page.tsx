@@ -492,6 +492,16 @@ export default function SettlementsPage() {
               continue;
             }
 
+            // Helper to parse numbers that might have currency symbols, commas, etc.
+            const parseNumber = (value: string | number): number => {
+              if (typeof value === 'number') return value;
+              if (!value) return 0;
+              // Remove currency symbols, commas, whitespace
+              const cleaned = String(value).replace(/[$,\s]/g, '').trim();
+              const parsed = parseFloat(cleaned);
+              return isNaN(parsed) ? 0 : parsed;
+            };
+
             const newLoad = {
               loadNumber: row['Load #'],
               driverId: driver.id,
@@ -503,22 +513,28 @@ export default function SettlementsPage() {
               trailerNumber: row['Trailer Number'] || '',
               truckId: row['Truck ID'] || '',
 
-              miles: parseFloat(row['Miles']) || 0,
-              emptyMiles: parseFloat(row['Empty Miles']) || 0,
+              miles: parseNumber(row['Miles']),
+              emptyMiles: parseNumber(row['Empty Miles']),
               pickupLocation: row['Pickup Location'] || '',
               deliveryLocation: row['Delivery Location'] || '',
 
-              invoiceAmount: parseFloat(row['Invoice Amount']) || 0,
-              reserveAmount: parseFloat(row['Reserve Amount']) || 0,
-              primeRateSurcharge: parseFloat(row['Prime Rate Surcharge']) || 0,
-              transactionFee: parseFloat(row['Transaction Fee']) || 0,
+              invoiceAmount: parseNumber(row['Invoice Amount']),
+              reserveAmount: parseNumber(row['Reserve Amount']),
+              primeRateSurcharge: parseNumber(row['Prime Rate Surcharge']),
+              transactionFee: parseNumber(row['Transaction Fee']),
 
-              factoringFee: parseFloat(row['Factoring Fee']) || 0,
-              advance: parseFloat(row['Advance']) || 0,
+              factoringFee: parseNumber(row['Factoring Fee']),
+              advance: parseNumber(row['Advance']),
 
               proofOfDeliveryUrl: null,
               rateConfirmationUrl: null,
             };
+
+            console.log('Importing load:', {
+              loadNumber: newLoad.loadNumber,
+              invoiceAmount: newLoad.invoiceAmount,
+              rawValue: row['Invoice Amount']
+            });
 
             await addDocumentNonBlocking(loadsCollection, newLoad);
             successCount++;
