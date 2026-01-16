@@ -407,13 +407,60 @@ export default function SettlementsPage() {
     link.click();
     document.body.removeChild(link);
   };
-
   const handleImportLoadsClick = () => {
     loadFileInputRef.current?.click();
   };
 
-  const handleImportLoads = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  // Flexible date parser that handles multiple formats and converts to dd-MMM-yy
+  const normalizeDateFormat = (dateString: string): string => {
+    if (!dateString) return format(new Date(), 'dd-MMM-yy');
+
+    const trimmed = dateString.trim();
+
+    // Try multiple common date formats
+    const formats = [
+      'dd-MMM-yy',        // "23-Jan-25"
+      'dd-MMM-yyyy',      // "23-Jan-2025"
+      'yyyy-MM-dd',       // "2025-01-23" (ISO)
+      'MM/dd/yyyy',       // "01/23/2025" (US)
+      'M/d/yyyy',         // "1/23/2025" (US short)
+      'dd/MM/yyyy',       // "23/01/2025" (EU)
+      'd/M/yyyy',         // "23/1/2025" (EU short)
+      'MM-dd-yyyy',       // "01-23-2025"
+      'dd.MM.yyyy',       // "23.01.2025"
+    ];
+
+    for (const formatStr of formats) {
+      try {
+        const parsed = parse(trimmed, formatStr, new Date());
+        // Check if parse was successful (valid date)
+        if (!isNaN(parsed.getTime())) {
+          // Convert to our standard format: dd-MMM-yy
+          return format(parsed, 'dd-MMM-yy');
+        }
+      } catch {
+        // Try next format
+        continue;
+      }
+    }
+
+    // If all formats fail, try native Date parsing as last resort
+    try {
+      const nativeDate = new Date(trimmed);
+      if (!isNaN(nativeDate.getTime())) {
+        return format(nativeDate, 'dd-MMM-yy');
+      }
+    } catch {
+      // Fall through to default
+    }
+
+    // If everything fails, return current date
+    console.warn(`Could not parse date: "${dateString}", using current date`);
+    return format(new Date(), 'dd-MMM-yy');
+  };
+
+  const handleImportLoads = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     Papa.parse(file, {
@@ -449,8 +496,8 @@ export default function SettlementsPage() {
               loadNumber: row['Load #'],
               driverId: driver.id,
 
-              pickupDate: row['Pickup Date'] || new Date().toISOString().split('T')[0],
-              deliveryDate: row['Delivery Date'] || new Date().toISOString().split('T')[0],
+              pickupDate: normalizeDateFormat(row['Pickup Date']),
+              deliveryDate: normalizeDateFormat(row['Delivery Date']),
               brokerId: row['Broker ID'] || '',
               invoiceId: row['Invoice ID'] || '',
               trailerNumber: row['Trailer Number'] || '',
