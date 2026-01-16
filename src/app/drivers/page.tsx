@@ -363,10 +363,9 @@ export default function DriversPage() {
                     <TableCell>{driver.unitId || '-'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{driver.phoneNumber || '-'}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="font-medium">{driver.payType}</Badge>
-                      <div className="font-mono text-muted-foreground text-xs">
+                      <div className="font-medium">
                         {driver.payType === 'percentage'
-                          ? `${driver.rate}%`
+                          ? `${parseFloat((driver.rate * 100).toFixed(2))}%`
                           : `${formatCurrency(driver.rate)}/mi`}
                       </div>
                     </TableCell>

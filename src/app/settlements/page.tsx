@@ -65,6 +65,11 @@ const calculateDriverPay = (load: Load, driver?: Driver) => {
   return (load.miles || 0) * driver.rate;
 };
 
+const toTitleCase = (str: string) => {
+  if (!str) return '';
+  return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+};
+
 const TABLE_COLUMNS = [
   { id: 'loadNumber', label: 'Load #' },
   { id: 'driver', label: 'Driver' },
@@ -278,7 +283,7 @@ export default function SettlementsPage() {
 
       summaryByDriver.set(driver.id, {
         driverId: driver.id,
-        driverName: `${driver.firstName} ${driver.lastName}`,
+        driverName: toTitleCase(`${driver.firstName} ${driver.lastName}`),
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
         netPay: 0,
@@ -289,7 +294,9 @@ export default function SettlementsPage() {
 
     loads.forEach(load => {
       // Filter load by week
-      if (!isWithinInterval(parseISO(load.deliveryDate), weekInterval)) return;
+      // load.deliveryDate is stored as 'dd-MMM-yy' (e.g. '23-Jan-25')
+      const deliveryDate = parse(load.deliveryDate, 'dd-MMM-yy', new Date());
+      if (!isWithinInterval(deliveryDate, weekInterval)) return;
 
       const driver = driverMap.get(load.driverId);
       const summary = summaryByDriver.get(load.driverId);
@@ -302,7 +309,9 @@ export default function SettlementsPage() {
 
     expenses.forEach(expense => {
       // Filter expense by week
-      if (!isWithinInterval(parseISO(expense.date), weekInterval)) return;
+      // Use new Date() for broader compatibility matching filteredExpenses logic
+      const expenseDate = new Date(expense.date);
+      if (!isWithinInterval(expenseDate, weekInterval)) return;
 
       if (expense.type === 'driver' && expense.driverId) {
         const summary = summaryByDriver.get(expense.driverId);
@@ -856,7 +865,7 @@ export default function SettlementsPage() {
                                       case 'loadNumber': return <span className="font-medium">{load.loadNumber}</span>;
                                       case 'driver': return driver && (
                                         <div className="flex flex-col">
-                                          <span className="font-medium">{driver.firstName} {driver.lastName}</span>
+                                          <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
                                         </div>
                                       );
                                       case 'pickupDate': return new Date(load.pickupDate).toLocaleDateString();
@@ -958,7 +967,7 @@ export default function SettlementsPage() {
                             {(() => {
                               if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
                               const d = driverMap.get(expense.driverId);
-                              return d ? `${d.firstName} ${d.lastName}` : <span className="text-muted-foreground">-</span>;
+                              return d ? toTitleCase(`${d.firstName} ${d.lastName}`) : <span className="text-muted-foreground">-</span>;
                             })()}
                           </TableCell>
                           <TableCell>{formatCurrency(expense.amount)}</TableCell>
