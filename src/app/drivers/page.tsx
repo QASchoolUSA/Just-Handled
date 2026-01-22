@@ -67,9 +67,20 @@ export default function DriversPage() {
 
     // Apply sort
     return [...filtered].sort((a, b) => {
+      // 1. Sort by Status (Active first)
+      const statusA = a.status || 'active';
+      const statusB = b.status || 'active';
+
+      if (statusA !== statusB) {
+        // 'active' comes before 'inactive'
+        return statusA === 'active' ? -1 : 1;
+      }
+
+      // 2. Sort by Name (Secondary)
       const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
       const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
       const comparison = nameA.localeCompare(nameB);
+
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [drivers, searchQuery, sortDirection]);
