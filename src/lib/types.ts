@@ -7,6 +7,8 @@ export type Driver = {
   email?: string;
   phoneNumber?: string;
   unitId?: string;
+  status?: 'active' | 'inactive';
+  terminationDate?: string;
   payType: 'percentage' | 'cpm';
   rate: number;
   recurringDeductions: {

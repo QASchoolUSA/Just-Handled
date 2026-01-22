@@ -37,6 +37,8 @@ const formSchema = z.object({
   email: z.string().optional(),
   phoneNumber: z.string().optional(),
   unitId: z.string().optional(),
+  status: z.enum(['active', 'inactive']).default('active'),
+  terminationDate: z.string().optional(),
   payType: z.enum(['percentage', 'cpm']),
   rate: z.coerce.number().min(0, { message: 'Rate must be a positive number.' }),
   insurance: z.coerce.number().min(0).default(0),
@@ -65,6 +67,8 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
       email: '',
       phoneNumber: '',
       unitId: '',
+      status: 'active',
+      terminationDate: '',
       payType: 'percentage',
       rate: 0,
       insurance: 0,
@@ -84,6 +88,8 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         email: driver.email || '',
         phoneNumber: driver.phoneNumber || '',
         unitId: driver.unitId || '',
+        status: driver.status || 'active',
+        terminationDate: driver.terminationDate || '',
         payType: driver.payType,
         rate: driver.rate,
         insurance: driver.recurringDeductions.insurance,
@@ -100,6 +106,8 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
         email: '',
         phoneNumber: '',
         unitId: '',
+        status: 'active',
+        terminationDate: '',
         payType: 'percentage',
         rate: 0.25,
         insurance: 0,
@@ -200,8 +208,40 @@ export function DriverForm({ isOpen, onOpenChange, onSave, driver }: DriverFormP
                   </FormItem>
                 )}
               />
-              {/* moved Unit ID to sit next to Pay Type if needed, or keeping structure */}
-              <div className="hidden md:block"></div>
+              <FormField
+                control={form.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="terminationDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Termination Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <FormField

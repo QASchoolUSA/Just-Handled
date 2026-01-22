@@ -91,13 +91,34 @@ export default function DriversPage() {
     }
   };
 
+  const handleToggleStatus = async (driver: Driver) => {
+    if (!firestore) return;
+    const currentStatus = driver.status || 'active';
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+
+    const driverDoc = doc(firestore, 'drivers', driver.id);
+    const updates: any = { status: newStatus };
+
+    // If deactivating, clear the Unit ID
+    if (newStatus === 'inactive') {
+      updates.unitId = '';
+    }
+
+    try {
+      await setDocumentNonBlocking(driverDoc, updates, { merge: true });
+    } catch (error) {
+      console.error('Error updating driver status:', error);
+      alert('Failed to update driver status.');
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
     const csvData = [
-      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
-      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '100', '50', '35', '25', '200', '50'],
-      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '150', '0', '35', '0', '0', '0']
+      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls', 'Termination Date'],
+      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '100', '50', '35', '25', '200', '50', ''],
+      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '150', '0', '35', '0', '0', '0', '2023-12-31']
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -162,15 +183,22 @@ export default function DriversPage() {
                 const adminFee = parseFloat(row['Admin Fee']) || 0;
                 const fuel = parseFloat(row['Fuel']) || 0;
                 const tolls = parseFloat(row['Tolls']) || 0;
+                const terminationDate = row['Termination Date'] || '';
+
+                // If termination date is present, mark as inactive and clear Unit ID
+                const status = terminationDate ? 'inactive' : 'active';
+                const unitId = (status === 'inactive') ? '' : (row['Unit ID'] || '');
 
                 const newDriver = {
                   firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
                   lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
-                  unitId: row['Unit ID'] || '',
+                  unitId,
                   email: row['Email'] || '',
                   phoneNumber: row['Contact number'] || '',
                   payType,
                   rate,
+                  status,
+                  terminationDate,
                   recurringDeductions: {
                     insurance,
                     escrow,
@@ -225,7 +253,9 @@ export default function DriversPage() {
           lastName: driverData.lastName,
           email: driverData.email,
           phoneNumber: driverData.phoneNumber,
-          unitId: driverData.unitId,
+          unitId: driverData.status === 'inactive' ? '' : driverData.unitId,
+          status: driverData.status,
+          terminationDate: driverData.terminationDate,
           payType: driverData.payType,
           rate: driverData.rate,
           recurringDeductions: {
@@ -244,7 +274,9 @@ export default function DriversPage() {
           lastName: driverData.lastName,
           email: driverData.email,
           phoneNumber: driverData.phoneNumber,
-          unitId: driverData.unitId,
+          unitId: driverData.status === 'inactive' ? '' : driverData.unitId,
+          status: driverData.status,
+          terminationDate: driverData.terminationDate,
           payType: driverData.payType,
           rate: driverData.rate,
           recurringDeductions: {
@@ -328,6 +360,7 @@ export default function DriversPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-6">Driver</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Unit ID</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Pay Structure</TableHead>
@@ -360,6 +393,11 @@ export default function DriversPage() {
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <Badge variant={driver.status === 'inactive' ? 'secondary' : 'default'} className={driver.status === 'inactive' ? 'opacity-50' : 'bg-green-600 hover:bg-green-700'}>
+                        {toTitleCase(driver.status || 'Active')}
+                      </Badge>
+                    </TableCell>
                     <TableCell>{driver.unitId || '-'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{driver.phoneNumber || '-'}</TableCell>
                     <TableCell>
@@ -386,8 +424,11 @@ export default function DriversPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
                           <DropdownMenuItem onClick={() => handleEditDriver(driver)}>Edit Profile</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleToggleStatus(driver)}>
+                            {driver.status === 'inactive' ? 'Activate Driver' : 'Deactivate Driver'}
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDeleteDriver(driver.id)} className="text-red-600">
-                            Deactivate Driver
+                            Delete Driver
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
