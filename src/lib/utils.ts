@@ -33,3 +33,13 @@ export function toTitleCase(str: string) {
     text => text.charAt(0).toUpperCase() + text.substring(1).toLowerCase()
   );
 }
+
+export function formatPhoneNumber(phoneNumber: string | undefined | null) {
+  if (!phoneNumber) return '';
+  const cleaned = ('' + phoneNumber).replace(/\D/g, '');
+  const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+  if (match) {
+    return '(' + match[1] + ') ' + match[2] + '-' + match[3];
+  }
+  return phoneNumber;
+}

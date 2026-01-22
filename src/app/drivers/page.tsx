@@ -22,7 +22,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { DriverForm } from '@/components/driver-form';
 import type { Driver } from '@/lib/types';
-import { formatCurrency, toTitleCase } from '@/lib/utils';
+import { formatCurrency, toTitleCase, formatPhoneNumber } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -84,12 +84,7 @@ export default function DriversPage() {
     setIsFormOpen(true);
   };
 
-  const handleDeleteDriver = async (driverId: string) => {
-    if (firestore && confirm('Are you sure you want to delete this driver?')) {
-      const driverDoc = doc(firestore, 'drivers', driverId);
-      deleteDocumentNonBlocking(driverDoc);
-    }
-  };
+
 
   const handleToggleStatus = async (driver: Driver) => {
     if (!firestore) return;
@@ -379,7 +374,11 @@ export default function DriversPage() {
                 </TableRow>
               ) : filteredAndSortedDrivers.length > 0 ? (
                 filteredAndSortedDrivers.map((driver) => (
-                  <TableRow key={driver.id} className="group hover:bg-muted/50 transition-colors cursor-default">
+                  <TableRow
+                    key={driver.id}
+                    className="group hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => handleEditDriver(driver)}
+                  >
                     <TableCell className="font-medium pl-6">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9 border border-border/50">
@@ -399,7 +398,7 @@ export default function DriversPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>{driver.unitId || '-'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{driver.phoneNumber || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(driver.phoneNumber) || '-'}</TableCell>
                     <TableCell>
                       <div className="font-medium">
                         {driver.payType === 'percentage'
@@ -416,19 +415,16 @@ export default function DriversPage() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Toggle menu</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleEditDriver(driver)}>Edit Profile</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleStatus(driver)}>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditDriver(driver); }}>View Profile</DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleToggleStatus(driver); }}>
                             {driver.status === 'inactive' ? 'Activate Driver' : 'Deactivate Driver'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDeleteDriver(driver.id)} className="text-red-600">
-                            Delete Driver
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
