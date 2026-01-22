@@ -101,8 +101,8 @@ export default function OwnersPage() {
 
     const handleDownloadTemplate = () => {
         const csvData = [
-            ['Name', 'Unit ID', 'Percentage (e.g. 0.88)', 'Fuel Rebate (Weekly)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
-            ['Acme Transit LLC', '101', '0.88', '50.00', '150', '50', '35', '25', '250', '60'],
+            ['Name', 'Unit ID', 'Percentage (e.g. 0.88)', 'Fuel Rebate (e.g. 0.5 for 50%)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
+            ['Acme Transit LLC', '101', '0.88', '0.50', '150', '50', '35', '25', '250', '60'],
             ['Redline Logistics', '102', '0.90', '0', '200', '0', '35', '0', '0', '0']
         ];
         const csv = Papa.unparse(csvData);
@@ -148,7 +148,7 @@ export default function OwnersPage() {
 
                             try {
                                 const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
-                                const fuelRebate = parseFloat(row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
+                                const fuelRebate = parseFloat(row['Fuel Rebate (e.g. 0.5 for 50%)'] || row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
                                 const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
                                 const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
                                 const eld = parseFloat(row['ELD']) || 0;
@@ -337,7 +337,7 @@ export default function OwnersPage() {
                                                     {(owner.percentage * 100).toFixed(2)}%
                                                 </TableCell>
                                                 <TableCell className="font-mono text-muted-foreground">
-                                                    {owner.fuelRebate ? formatCurrency(owner.fuelRebate) : '-'}
+                                                    {owner.fuelRebate ? `${(owner.fuelRebate * 100).toFixed(0)}%` : '-'}
                                                 </TableCell>
                                                 <TableCell className="text-sm text-muted-foreground">
                                                     <div className="flex flex-col gap-1">

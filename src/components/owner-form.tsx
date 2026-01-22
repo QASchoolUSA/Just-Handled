@@ -157,9 +157,9 @@ export function OwnerForm({ isOpen, onOpenChange, onSave, owner }: OwnerFormProp
                                 name="fuelRebate"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Fuel Rebate (Weekly)</FormLabel>
+                                        <FormLabel>Fuel Rebate (e.g. 0.5 for 50%)</FormLabel>
                                         <FormControl>
-                                            <Input type="number" step="0.01" {...field} />
+                                            <Input type="number" step="0.01" max="1" placeholder="0.5" {...field} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>

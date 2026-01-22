@@ -26,7 +26,7 @@ export type Owner = {
   name: string; // Company Name
   unitId?: string;
   percentage: number; // e.g. 0.88 for 88%
-  fuelRebate: number; // e.g. weekly rebate amount
+  fuelRebate: number; // e.g. 0.5 for 50%, 1 for 100%
   recurringDeductions: {
     insurance: number;
     escrow: number;
