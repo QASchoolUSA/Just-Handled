@@ -43,13 +43,13 @@ const formSchema = z.object({
   type: z.enum(['company', 'driver']),
   driverId: z.string().optional(),
 }).refine(data => {
-    if (data.type === 'driver' && !data.driverId) {
-        return false;
-    }
-    return true;
+  if (data.type === 'driver' && !data.driverId) {
+    return false;
+  }
+  return true;
 }, {
-    message: 'A driver is required for driver deductions.',
-    path: ['driverId'],
+  message: 'A driver is required for driver deductions.',
+  path: ['driverId'],
 });
 
 
@@ -78,18 +78,18 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
   const expenseType = form.watch('type');
 
   React.useEffect(() => {
-     if (isOpen) {
-        if (expense) {
+    if (isOpen) {
+      if (expense) {
         form.reset({ ...expense, date: new Date(expense.date) });
-        } else {
+      } else {
         form.reset({
-            date: new Date(),
-            description: '',
-            amount: 0,
-            type: 'company',
-            driverId: undefined,
+          date: new Date(),
+          description: '',
+          amount: 0,
+          type: 'company',
+          driverId: undefined,
         });
-        }
+      }
     }
   }, [expense, form, isOpen]);
 
@@ -102,7 +102,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
     if (values.type === 'company') {
       delete dataToSave.driverId;
     }
-    
+
     onSave(dataToSave);
   }
 
@@ -117,47 +117,47 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-             <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={"outline"}
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) =>
-                            date > new Date() || date < new Date("1900-01-01")
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full pl-3 text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value ? (
+                            format(field.value, "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        disabled={(date) =>
+                          date > new Date() || date < new Date("1900-01-01")
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="description"
@@ -171,7 +171,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="amount"
@@ -223,7 +223,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                       </FormControl>
                       <SelectContent>
                         {drivers.map(driver => (
-                            <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>
+                          <SelectItem key={driver.id} value={driver.id}>{driver.firstName} {driver.lastName}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -232,7 +232,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                 )}
               />
             )}
-           
+
             <DialogFooter>
               <Button type="submit">Save Expense</Button>
             </DialogFooter>

@@ -102,3 +102,23 @@ export type ImportResult = {
   success: number;
   errors: ImportError[];
 };
+
+export type SettlementSummary = {
+  driverId: string;
+  driverName: string;
+  grossPay: number;
+  totalDeductions: number;
+  netPay: number;
+  loads: Load[];
+  deductions: (Expense & { isRecurring?: boolean })[];
+};
+
+export type OwnerSettlementSummary = {
+  ownerId: string;
+  ownerName: string;
+  grossPay: number;
+  totalDeductions: number;
+  netPay: number;
+  loads: Load[];
+  deductions: (Expense & { isRecurring?: boolean })[];
+};
