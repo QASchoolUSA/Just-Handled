@@ -1125,15 +1125,13 @@ export default function SettlementsPage() {
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
                         <div className="rounded-lg border overflow-hidden">
                           <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Loc</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
+                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
                             <TableBody>
                               {summary.loads.map(l => (
                                 <TableRow key={l.id} className="hover:bg-muted/20">
                                   <TableCell>{l.loadNumber}</TableCell>
-                                  <TableCell className="text-xs">
-                                    <div className="font-medium">{l.pickupLocation}</div>
-                                    <div className="text-muted-foreground">to {l.deliveryLocation}</div>
-                                  </TableCell>
+                                  <TableCell className="text-xs">{l.pickupLocation}</TableCell>
+                                  <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
                                   <TableCell className="text-right font-medium">{formatCurrency(calculateDriverPay(l, driverMap.get(l.driverId)))}</TableCell>
                                 </TableRow>
                               ))}
@@ -1224,7 +1222,7 @@ export default function SettlementsPage() {
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
                         <div className="rounded-lg border overflow-hidden">
                           <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Loc</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
+                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
                             <TableBody>
                               {summary.loads.map(l => {
                                 // Re-find owner for percent calc if needed, or just rely on what we put in summary?
@@ -1237,10 +1235,8 @@ export default function SettlementsPage() {
                                 return (
                                   <TableRow key={l.id} className="hover:bg-muted/20">
                                     <TableCell>{l.loadNumber}</TableCell>
-                                    <TableCell className="text-xs">
-                                      <div className="font-medium">{l.pickupLocation}</div>
-                                      <div className="text-muted-foreground">to {l.deliveryLocation}</div>
-                                    </TableCell>
+                                    <TableCell className="text-xs">{l.pickupLocation}</TableCell>
+                                    <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
                                     <TableCell className="text-right font-medium">{formatCurrency(pay)}</TableCell>
                                   </TableRow>
                                 );

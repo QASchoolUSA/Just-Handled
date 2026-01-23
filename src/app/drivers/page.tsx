@@ -433,7 +433,10 @@ export default function DriversPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditDriver(driver); }}>View Profile</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => {
+                            // Defer opening the dialog to allow the dropdown to close and clean up focus/scroll locks
+                            setTimeout(() => handleEditDriver(driver), 50);
+                          }}>View Profile</DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleToggleStatus(driver); }}>
                             {driver.status === 'inactive' ? 'Activate Driver' : 'Deactivate Driver'}
                           </DropdownMenuItem>
