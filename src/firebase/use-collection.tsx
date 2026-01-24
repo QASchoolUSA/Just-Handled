@@ -17,7 +17,7 @@ import type { WithId } from '../lib/types';
 
 interface CollectionQuery<T> {
   path: string;
-  where?: [string, WhereFilterOp, any];
+  where?: [string, WhereFilterOp, any] | [string, WhereFilterOp, any][];
   orderBy?: [string, OrderByDirection];
 }
 
@@ -39,7 +39,16 @@ export function useCollection<T extends DocumentData>(
     let q: Query<DocumentData> = collection(firestore, path);
 
     if (whereClause) {
-      q = query(q, where(whereClause[0], whereClause[1], whereClause[2]));
+      if (Array.isArray(whereClause[0])) {
+        // Handle multiple where clauses
+        (whereClause as [string, WhereFilterOp, any][]).forEach(w => {
+          q = query(q, where(w[0], w[1], w[2]));
+        });
+      } else {
+        // Handle single where clause
+        const w = whereClause as [string, WhereFilterOp, any];
+        q = query(q, where(w[0], w[1], w[2]));
+      }
     }
     if (orderByClause) {
       q = query(q, orderBy(orderByClause[0], orderByClause[1]));
@@ -54,8 +63,8 @@ export function useCollection<T extends DocumentData>(
     }
 
     if (!collectionQuery) {
-        setLoading(false);
-        return;
+      setLoading(false);
+      return;
     };
 
     setLoading(true);

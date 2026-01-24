@@ -26,12 +26,12 @@ import { Badge } from '@/components/ui/badge';
 import { LoadForm } from '@/components/load-form';
 import { ExpenseForm } from '@/components/expense-form';
 import type { Load, Driver, Expense, AccountSettings, Owner, SettlementSummary, OwnerSettlementSummary } from '@/lib/types';
-import { generateSettlementPDF } from '@/lib/pdf-export';
+// import { generateSettlementPDF } from '@/lib/pdf-export'; // Dynamic import used instead
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
 import { formatCurrency, downloadCsv } from '@/lib/utils';
 import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, doc } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, limit } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 
@@ -63,6 +63,26 @@ const toTitleCase = (str: string) => {
   return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 };
 
+// Start Date Helper
+const parseDateHelper = (dateStr: string) => {
+  if (!dateStr) return new Date();
+
+  // Try ISO first (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return parseISO(dateStr);
+  }
+
+  // Try Legacy (dd-MMM-yy)
+  const parsed = parse(dateStr, 'dd-MMM-yy', new Date());
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  // Fallback
+  return new Date();
+};
+// End Date Helper
+
 const TABLE_COLUMNS = [
   { id: 'loadNumber', label: 'Load #' },
   { id: 'driver', label: 'Driver' },
@@ -79,16 +99,41 @@ const TABLE_COLUMNS = [
 export default function SettlementsPage() {
   const firestore = useFirestore();
 
-  const loadsCollection = useMemoFirebase(() => firestore ? collection(firestore, 'loads') : null, [firestore]);
-  const expensesCollection = useMemoFirebase(() => firestore ? collection(firestore, 'expenses') : null, [firestore]);
+  // Format dates for Firestore query (YYYY-MM-DD)
+  // We use state for selectedWeek, so these need to be derived from that
+  const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+  const weekStartStr = format(startOfWeek(selectedWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const weekEndStr = format(endOfWeek(selectedWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+
+  // --- Firestore Queries with Date Filtering ---
+  // --- Firestore References (For Writes) ---
+  const loadsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'loads') : null, [firestore]);
+  const expensesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'expenses') : null, [firestore]);
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
-
-  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsCollection);
-  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesCollection);
-  const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
-
   const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
+
+  // --- Firestore Queries (For Reads with Date Filtering) ---
+
+  // --- Firestore Queries (For Reads with Date Filtering) ---
+  // DEBUGGING: FETCH ALL LOADS (Filters Disabled)
+  const loadsQuery = useMemoFirebase(() => {
+    if (!loadsCollectionRef) return null;
+    return query(loadsCollectionRef, where('pickupDate', '>=', weekStartStr), where('pickupDate', '<=', weekEndStr));
+  }, [loadsCollectionRef, weekStartStr, weekEndStr]);
+
+  const expensesQuery = useMemoFirebase(() => {
+    if (!expensesCollectionRef) return null;
+    return query(expensesCollectionRef, where('date', '>=', weekStartStr), where('date', '<=', weekEndStr));
+  }, [expensesCollectionRef, weekStartStr, weekEndStr]);
+
+  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
+  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQuery);
+  const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
   const { data: owners, loading: ownersLoading } = useCollection<Owner>(ownersCollection);
+
+
+
 
   const [accounts] = useLocalStorage<AccountSettings>(LS_KEYS.ACCOUNTS, DEFAULT_ACCOUNTS);
 
@@ -113,10 +158,12 @@ export default function SettlementsPage() {
     }
   };
 
-  const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 })); // Monday start
+  // const [selectedWeek, setSelectedWeek] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 })); // Moved up
+  // const weekStart = useMemo(() => selectedWeek, [selectedWeek]);
+  // const weekEnd = useMemo(() => endOfWeek(selectedWeek, { weekStartsOn: 1 }), [selectedWeek]);
 
-  const weekStart = useMemo(() => selectedWeek, [selectedWeek]);
-  const weekEnd = useMemo(() => endOfWeek(selectedWeek, { weekStartsOn: 1 }), [selectedWeek]);
+  const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
 
   const handlePrevWeek = () => setSelectedWeek(prev => subWeeks(prev, 1));
   const handleNextWeek = () => setSelectedWeek(prev => addWeeks(prev, 1));
@@ -139,8 +186,9 @@ export default function SettlementsPage() {
     return loads
       .filter(load => {
         // Date Filter: pickupDate must be within selected week
-        const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
-        if (!isWithinInterval(loadDate, weekInterval)) return false;
+        // Server side filtering handles this now
+        // const loadDate = parseDateHelper(load.pickupDate);
+        // if (!isWithinInterval(loadDate, weekInterval)) return false;
 
         // Search Query Filter
         if (!searchQuery.trim()) return true;
@@ -170,8 +218,8 @@ export default function SettlementsPage() {
           return sortDirection === 'asc' ? comparison : -comparison;
         } else {
           // Sort by date (pickupDate or deliveryDate)
-          const dateA = parse(sortColumn === 'pickupDate' ? a.pickupDate : a.deliveryDate, 'dd-MMM-yy', new Date());
-          const dateB = parse(sortColumn === 'pickupDate' ? b.pickupDate : b.deliveryDate, 'dd-MMM-yy', new Date());
+          const dateA = parseDateHelper(sortColumn === 'pickupDate' ? a.pickupDate : a.deliveryDate);
+          const dateB = parseDateHelper(sortColumn === 'pickupDate' ? b.pickupDate : b.deliveryDate);
 
           const diff = dateA.getTime() - dateB.getTime();
           return sortDirection === 'asc' ? diff : -diff;
@@ -186,8 +234,9 @@ export default function SettlementsPage() {
 
     return expenses.filter(expense => {
       // Date Filter
-      const expenseDate = new Date(expense.date);
-      if (!isWithinInterval(expenseDate, weekInterval)) return false;
+      // Server side filtering handles this now
+      // const expenseDate = new Date(expense.date);
+      // if (!isWithinInterval(expenseDate, weekInterval)) return false;
 
       return true;
     });
@@ -196,6 +245,115 @@ export default function SettlementsPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
 
+
+
+
+
+  // --- Data Migration (Robust) ---
+  const handleMigrateData = async () => {
+    if (!firestore || !loadsCollectionRef) return;
+
+    // Helper to parse dd-MMM-yy to ISO (Robust)
+    const parseLegacyDate = (dateStr: string) => {
+      const formats = ['dd-MMM-yy', 'd-MMM-yy', 'yyyy-MM-dd', 'dd/MM/yyyy'];
+      for (const fmt of formats) {
+        try {
+          const parsed = parse(dateStr, fmt, new Date());
+          if (!isNaN(parsed.getTime())) {
+            return format(parsed, 'yyyy-MM-dd');
+          }
+        } catch (e) { /* continue */ }
+      }
+      return null;
+    };
+    const isIsoDate = (dateStr: string) => /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+
+    if (!confirm('This will verify all records in the database and convert legacy dates to ISO format. Continue?')) return;
+
+    let updatedCount = 0;
+    const loadsSnapshot = await getDocs(loadsCollectionRef);
+
+    for (const docSnap of loadsSnapshot.docs) {
+      const load = docSnap.data() as Load;
+      let updates: any = {};
+
+      if (load.pickupDate && !isIsoDate(load.pickupDate)) {
+        const iso = parseLegacyDate(load.pickupDate);
+        if (iso) updates.pickupDate = iso;
+      }
+      if (load.deliveryDate && !isIsoDate(load.deliveryDate)) {
+        const iso = parseLegacyDate(load.deliveryDate);
+        if (iso) updates.deliveryDate = iso;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await setDocumentNonBlocking(doc(firestore, 'loads', docSnap.id), updates, { merge: true });
+        updatedCount++;
+      }
+    }
+
+
+    if (updatedCount === 0) {
+      alert("Migration ran but updated 0 records. The date format might not match known patterns.");
+    } else {
+      alert(`Migration Complete. Updated ${updatedCount} loads. The page will reload.`);
+      window.location.reload();
+    }
+  };
+
+
+
+  const handleAnalyzeData = async () => {
+    if (!firestore || !loadsCollectionRef) return;
+    try {
+      const snapshot = await getDocs(loadsCollectionRef);
+      const total = snapshot.size;
+      let isoCount = 0;
+      let legacyCount = 0;
+      let unknownCount = 0;
+      const samples: string[] = [];  // Collecting RAW samples of non-migrated data
+
+      let minDate = '';
+      let maxDate = '';
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const date = data.pickupDate;
+        if (!date) return;
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          isoCount++;
+          if (!minDate || date < minDate) minDate = date;
+          if (!maxDate || date > maxDate) maxDate = date;
+        } else if (/\d{1,2}-[a-zA-Z]{3}-\d{2}/.test(date)) {
+          legacyCount++;
+        } else {
+          unknownCount++;
+          if (samples.length < 5) samples.push(`${String(date)}`);
+        }
+      });
+
+      const filterMsg = `
+        Current View: ${weekStartStr} to ${weekEndStr}
+        
+        Database Status:
+        - Total Records: ${total}
+        - Migrated (ISO): ${isoCount} 
+          -> Range: ${minDate || 'N/A'} to ${maxDate || 'N/A'}
+        - Legacy (Need Migration): ${legacyCount}
+        - Unknown: ${unknownCount}
+        - RAW SAMPLES: ${samples.join(', ')}
+        
+        ADVICE:
+        - If 'RAW SAMPLES' are visible, click Migrate.
+        - If 'Updated 0 loads' after migrating, the format is tricky.
+        `;
+
+      alert(filterMsg);
+    } catch (e) {
+      alert('Analysis failed: ' + e);
+    }
+  };
 
 
   // --- Load Management ---
@@ -228,12 +386,13 @@ export default function SettlementsPage() {
       transactionFee: loadData.transactionFee || 0,
     };
 
-    if (firestore && loadsCollection) {
+    if (firestore && loadsCollectionRef) {
       if (editingLoad) {
         const loadDoc = doc(firestore, 'loads', editingLoad.id);
         setDocumentNonBlocking(loadDoc, dataToSave, { merge: true });
       } else {
-        addDocumentNonBlocking(loadsCollection, dataToSave);
+        if (!loadsCollectionRef) return;
+        addDocumentNonBlocking(loadsCollectionRef, dataToSave);
       }
     }
     setIsLoadFormOpen(false);
@@ -254,11 +413,12 @@ export default function SettlementsPage() {
     }
   };
   const handleSaveExpense = async (expenseData: Omit<Expense, 'id'>) => {
-    if (!firestore || !expensesCollection) return;
+    if (!firestore || !expensesCollectionRef) return;
     if (editingExpense) {
       setDocumentNonBlocking(doc(firestore, 'expenses', editingExpense.id), expenseData, { merge: true });
     } else {
-      addDocumentNonBlocking(expensesCollection, expenseData);
+      if (!expensesCollectionRef) return;
+      addDocumentNonBlocking(expensesCollectionRef, expenseData);
     }
     setIsExpenseFormOpen(false);
   };
@@ -290,8 +450,8 @@ export default function SettlementsPage() {
 
     loads.forEach(load => {
       // Filter load by week
-      // load.deliveryDate is stored as 'dd-MMM-yy' (e.g. '23-Jan-25')
-      const deliveryDate = parse(load.deliveryDate, 'dd-MMM-yy', new Date());
+      // load.deliveryDate can be 'dd-MMM-yy' or 'yyyy-MM-dd'
+      const deliveryDate = parseDateHelper(load.deliveryDate);
       if (!isWithinInterval(deliveryDate, weekInterval)) return;
 
       const driver = driverMap.get(load.driverId);
@@ -355,7 +515,7 @@ export default function SettlementsPage() {
     });
 
     loads.forEach(load => {
-      const deliveryDate = parse(load.deliveryDate, 'dd-MMM-yy', new Date());
+      const deliveryDate = parseDateHelper(load.deliveryDate);
       if (!isWithinInterval(deliveryDate, weekInterval)) return;
 
       // Find owner by truckId -> unitId
@@ -544,7 +704,7 @@ export default function SettlementsPage() {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        if (results.data && firestore && loadsCollection && drivers) {
+        if (results.data && firestore && loadsCollectionRef && drivers) {
           const importedLoads = results.data as any[];
           let successCount = 0;
           let skippedCount = 0;
@@ -653,7 +813,9 @@ export default function SettlementsPage() {
               rawValue: row['Invoice Amount']
             });
 
-            await addDocumentNonBlocking(loadsCollection, newLoad);
+            if (loadsCollectionRef) {
+              await addDocumentNonBlocking(loadsCollectionRef, newLoad);
+            }
             existingLoadNumbers.add(loadNumber); // Add to set for current import session
             successCount++;
           }
@@ -700,7 +862,7 @@ export default function SettlementsPage() {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        if (results.data && firestore && expensesCollection && drivers) {
+        if (results.data && firestore && expensesCollectionRef && drivers) {
           const importedExpenses = results.data as any[];
           let successCount = 0;
 
@@ -728,7 +890,9 @@ export default function SettlementsPage() {
               driverId,
             };
 
-            await addDocumentNonBlocking(expensesCollection, newExpense);
+            if (expensesCollectionRef) {
+              await addDocumentNonBlocking(expensesCollectionRef, newExpense);
+            }
             successCount++;
           }
           alert(`Imported ${successCount} expenses.`);
@@ -742,7 +906,15 @@ export default function SettlementsPage() {
     });
   };
 
-
+  const handleExportPDF = async (summary: SettlementSummary | OwnerSettlementSummary, start: Date, end: Date) => {
+    try {
+      const { generateSettlementPDF } = await import('@/lib/pdf-export');
+      generateSettlementPDF(summary, start, end);
+    } catch (error) {
+      console.error('Failed to load PDF generator:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
 
   const isLoading = loadsLoading || expensesLoading || driversLoading || ownersLoading;
 
@@ -795,7 +967,10 @@ export default function SettlementsPage() {
           <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Journal
           </Button>
+
+
         </div>
+
       </div>
 
       <Tabs defaultValue="loads" className="w-full">
@@ -1101,7 +1276,7 @@ export default function SettlementsPage() {
                       <CardTitle className="font-display">{summary.driverName}</CardTitle>
                       <CardDescription>Driver Settlement</CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => generateSettlementPDF(summary, weekStart, weekEnd)}>
+                    <Button variant="outline" size="sm" onClick={() => handleExportPDF(summary, weekStart, weekEnd)}>
                       <FileDown className="mr-2 h-4 w-4" /> Export PDF
                     </Button>
                   </CardHeader>
@@ -1198,7 +1373,7 @@ export default function SettlementsPage() {
                       <CardTitle className="font-display">{summary.ownerName}</CardTitle>
                       <CardDescription>Owner/Company Settlement</CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => generateSettlementPDF(summary as any, weekStart, weekEnd)}>
+                    <Button variant="outline" size="sm" onClick={() => handleExportPDF(summary, weekStart, weekEnd)}>
                       <FileDown className="mr-2 h-4 w-4" /> Export PDF
                     </Button>
                   </CardHeader>
@@ -1297,14 +1472,14 @@ export default function SettlementsPage() {
           <div className="space-y-4 py-4">
             <div className="flex flex-col gap-2">
               <div className="p-4 rounded-lg bg-green-50 border border-green-100 text-green-700">
-                <span className="font-semibold">{importResult?.successCount}</span> loads imported successfully.
+                <span className="font-semibold">{importResult?.successCount || 0}</span> loads imported successfully.
               </div>
-              {importResult && importResult.skippedCount && importResult.skippedCount > 0 && (
+              {importResult?.skippedCount !== undefined && importResult.skippedCount > 0 && (
                 <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-100 text-yellow-700">
                   <span className="font-semibold">{importResult.skippedCount}</span> duplicate loads skipped (already exist).
                 </div>
               )}
-              {importResult && importResult.errors.length > 0 && (
+              {importResult?.errors && importResult.errors.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="font-semibold text-red-600">Failed to Import ({importResult.errors.length})</h4>
                   <p className="text-sm text-muted-foreground">The following rows were skipped:</p>
