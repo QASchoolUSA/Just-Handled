@@ -13,7 +13,7 @@ import { formatCurrency, cn } from '@/lib/utils';
 import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
-import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay } from 'date-fns';
+import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay, parseISO } from 'date-fns';
 
 // Helper to safely parse numbers that might have currency symbols, commas, etc.
 const safeParseNumber = (value: any): number => {
@@ -23,6 +23,13 @@ const safeParseNumber = (value: any): number => {
   const cleaned = String(value).replace(/[$,\s]/g, '').trim();
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
+};
+
+// Robust date parser
+const parseDateAny = (dateStr: string) => {
+  if (!dateStr) return new Date();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return parseISO(dateStr);
+  return parse(dateStr, 'dd-MMM-yy', new Date());
 };
 
 export default function DashboardPage() {
@@ -85,7 +92,7 @@ export default function DashboardPage() {
     if (!loads) return [];
     return loads.filter(load => {
       try {
-        const loadDate = parse(load.pickupDate, 'dd-MMM-yy', new Date());
+        const loadDate = parseDateAny(load.pickupDate);
         return isWithinInterval(loadDate, dateRange);
       } catch {
         return false;
@@ -97,7 +104,7 @@ export default function DashboardPage() {
     if (!expenses) return [];
     return expenses.filter(expense => {
       try {
-        const expenseDate = parse(expense.date, 'dd-MMM-yy', new Date());
+        const expenseDate = parseDateAny(expense.date);
         return isWithinInterval(expenseDate, dateRange);
       } catch {
         return false;

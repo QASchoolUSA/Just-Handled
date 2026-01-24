@@ -440,6 +440,7 @@ export default function SettlementsPage() {
       summaryByDriver.set(driver.id, {
         driverId: driver.id,
         driverName: toTitleCase(`${driver.firstName} ${driver.lastName}`),
+        unitId: driver.unitId,
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
         netPay: 0,
@@ -506,6 +507,7 @@ export default function SettlementsPage() {
       summaryByOwner.set(owner.id, {
         ownerId: owner.id,
         ownerName: owner.name,
+        unitId: owner.unitId,
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
         netPay: 0,
@@ -916,6 +918,26 @@ export default function SettlementsPage() {
     }
   };
 
+  const handleDownloadBatch = async () => {
+    if (settlementSummary.length === 0 && ownerSettlementSummary.length === 0) {
+      alert("No statements to download.");
+      return;
+    }
+
+    // Combine both lists
+    const allSummaries = [...settlementSummary, ...ownerSettlementSummary];
+
+    if (allSummaries.length > 50 && !confirm(`About to generate ${allSummaries.length} PDFs. This might take a moment. Continue?`)) return;
+
+    try {
+      const { generateBatchZip } = await import('@/lib/pdf-export');
+      await generateBatchZip(allSummaries, weekStart, weekEnd);
+    } catch (error) {
+      console.error('Batch download failed:', error);
+      alert('Failed to generate batch archive.');
+    }
+  };
+
   const isLoading = loadsLoading || expensesLoading || driversLoading || ownersLoading;
 
 
@@ -966,6 +988,9 @@ export default function SettlementsPage() {
           </Button>
           <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Journal
+          </Button>
+          <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
+            <Download className="mr-2 h-4 w-4" /> Download All Statements
           </Button>
 
 

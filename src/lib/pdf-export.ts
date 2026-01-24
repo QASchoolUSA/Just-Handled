@@ -5,6 +5,13 @@ import { SettlementSummary, OwnerSettlementSummary } from '@/lib/types';
 import { formatCurrency } from './utils';
 
 export const generateSettlementPDF = (settlement: SettlementSummary | OwnerSettlementSummary, payPeriodStart: Date, payPeriodEnd: Date) => {
+    const { doc, fileName } = createSettlementDoc(settlement, payPeriodStart, payPeriodEnd);
+    doc.save(fileName);
+};
+
+
+// Helper: Get Raw PDF Doc (Decoupled from Save)
+const createSettlementDoc = (settlement: SettlementSummary | OwnerSettlementSummary, payPeriodStart: Date, payPeriodEnd: Date) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
 
@@ -49,11 +56,6 @@ export const generateSettlementPDF = (settlement: SettlementSummary | OwnerSettl
         startY: 80,
         head: [['Load #', 'Pickup', 'Delivery', 'Origin', 'Destination', 'Pay']],
         body: settlement.loads.map(l => {
-            // Calculate approximate pay for display in PDF if possible, or just show Invoice Amount?
-            // Since we don't have the individual load pay stored in the summary loads list easily accessible without re-calc, 
-            // and for owners it is a percentage, for drivers it is rate * miles or %.
-            // For simplicity in this fix, we will show the Invoice Amount, but note that for owners this might be confusing if they expect their cut.
-            // Ideally we pass a calculated field. But let's stick to Invoice Amount for now or try to deduce.
             return [
                 l.loadNumber,
                 l.pickupDate,
@@ -95,8 +97,6 @@ export const generateSettlementPDF = (settlement: SettlementSummary | OwnerSettl
     // Check for page overflow
     if (boxTop + 40 > doc.internal.pageSize.height) {
         doc.addPage();
-        // Reset Y for new page
-        // boxTop = 20; // Re-assign if we were using let
     }
 
     doc.setFillColor(245, 245, 245);
@@ -119,7 +119,60 @@ export const generateSettlementPDF = (settlement: SettlementSummary | OwnerSettl
     doc.text('Net Pay:', boxLeft + 5, boxTop + 35);
     doc.text(formatCurrency(settlement.netPay), boxLeft + boxWidth - 5, boxTop + 35, { align: 'right' });
 
-    // Save
-    const fileName = `Settlement_${payToName.replace(/\s+/g, '_')}_${format(payPeriodEnd, 'yyyy-MM-dd')}.pdf`;
-    doc.save(fileName);
+    // Generate File Name
+    const unitId = settlement.unitId || 'UnknownUnit';
+    const cleanName = payToName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_');
+    const startStr = format(payPeriodStart, 'yyyy-MM-dd');
+    const endStr = format(payPeriodEnd, 'yyyy-MM-dd');
+
+    const typePrefix = 'driverName' in settlement ? 'Driver' : 'Owner';
+
+    // Format: Type - Unit ID - Name - Dates
+    // Example: Driver - 1001 - John_Doe - 2025-04-14_to_2025-04-20
+    const fileName = `${typePrefix} - ${unitId} - ${cleanName} - ${startStr}_to_${endStr}.pdf`;
+
+    return { doc, fileName };
+};
+
+
+export const generateBatchZip = async (
+    settlements: (SettlementSummary | OwnerSettlementSummary)[],
+    payPeriodStart: Date,
+    payPeriodEnd: Date
+) => {
+    try {
+        // Dynamic import for performance (lazy load library)
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+
+        let count = 0;
+
+        settlements.forEach(settlement => {
+            const { doc, fileName } = createSettlementDoc(settlement, payPeriodStart, payPeriodEnd);
+            const pdfBlob = doc.output('blob');
+            zip.file(fileName, pdfBlob);
+            count++;
+        });
+
+        if (count === 0) {
+            alert("No settlements to download.");
+            return;
+        }
+
+        // Generate Zip Blob
+        const content = await zip.generateAsync({ type: 'blob' });
+
+        // Trigger Download
+        const zipName = `Settlements_Batch_${format(payPeriodEnd, 'yyyy-MM-dd')}.zip`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = zipName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+    } catch (e) {
+        console.error("Batch download failed:", e);
+        alert("Failed to generate batch archive.");
+    }
 };

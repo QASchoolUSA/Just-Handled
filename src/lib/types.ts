@@ -106,6 +106,7 @@ export type ImportResult = {
 export type SettlementSummary = {
   driverId: string;
   driverName: string;
+  unitId?: string;
   grossPay: number;
   totalDeductions: number;
   netPay: number;
@@ -116,6 +117,7 @@ export type SettlementSummary = {
 export type OwnerSettlementSummary = {
   ownerId: string;
   ownerName: string;
+  unitId?: string;
   grossPay: number;
   totalDeductions: number;
   netPay: number;
