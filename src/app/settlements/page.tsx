@@ -141,6 +141,7 @@ export default function SettlementsPage() {
   const [editingLoad, setEditingLoad] = useState<Load | undefined>(undefined);
   const [isExpenseFormOpen, setIsExpenseFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState('loads');
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
@@ -989,16 +990,18 @@ export default function SettlementsPage() {
           <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Journal
           </Button>
-          <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
-            <Download className="mr-2 h-4 w-4" /> Download All Statements
-          </Button>
+          {activeTab === 'summary' && (
+            <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
+              <Download className="mr-2 h-4 w-4" /> Download All Statements
+            </Button>
+          )}
 
 
         </div>
 
       </div>
 
-      <Tabs defaultValue="loads" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-6 h-12 p-1 bg-muted/30 rounded-xl border border-border/40">
           <TabsTrigger value="loads" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Loads ({loads?.length || 0})</TabsTrigger>
           <TabsTrigger value="expenses" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Expenses ({expenses?.length || 0})</TabsTrigger>
