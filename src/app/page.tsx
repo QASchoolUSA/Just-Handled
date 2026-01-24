@@ -35,20 +35,6 @@ const parseDateAny = (dateStr: string) => {
 export default function DashboardPage() {
   const firestore = useFirestore();
 
-  const loadsCollection = useMemoFirebase(() => firestore ? collection(firestore, 'loads') : null, [firestore]);
-  const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
-  const expensesCollection = useMemoFirebase(() => firestore ? collection(firestore, 'expenses') : null, [firestore]);
-
-  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsCollection);
-  const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
-  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesCollection);
-
-  type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
-  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
-  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-
   // Calculate date range based on selected period
   const dateRange = useMemo(() => {
     if (selectedPeriod === 'custom' && customStartDate && customEndDate) {
@@ -79,13 +65,44 @@ export default function DashboardPage() {
         days = 365;
         break;
       case 'custom':
-        days = 30; // fallback if custom not set
+        days = 30; // fallback
         break;
     }
 
     start = subDays(end, days);
     return { start, end };
   }, [selectedPeriod, customStartDate, customEndDate]);
+
+  // Server-side Query Configurations
+  const loadsQueryConfig = useMemo(() => {
+    const startStr = format(dateRange.start, 'yyyy-MM-dd');
+    // For end date, we might want to include today? '2025-05-01'
+    // String comparison works for ISO dates.
+    // However, if DB has exact matches, querying '>= start' is usually enough for history.
+    // Let's do a simple range or just start date to be safe/simple?
+    // Let's do >= startStr.
+    return {
+      path: 'loads',
+      where: [['pickupDate', '>=', startStr]] as [string, any, any][] // array of where clauses
+    };
+  }, [dateRange]);
+
+  const expensesQueryConfig = useMemo(() => {
+    const startStr = format(dateRange.start, 'yyyy-MM-dd');
+    return {
+      path: 'expenses',
+      where: [['date', '>=', startStr]] as [string, any, any][]
+    };
+  }, [dateRange]);
+
+  // Drivers we typically fetch all because they are reference data (and list is small)
+  const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
+
+  // Note: We use 'any' casting for the query config to match the hook's expected simplistic interface if needed,
+  // but based on use-collection.tsx it accepts { path, where: [...] }.
+  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQueryConfig);
+  const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection); // Keep fetching all drivers
+  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQueryConfig);
 
   // Filter loads and expenses by period
   const filteredLoads = useMemo(() => {
