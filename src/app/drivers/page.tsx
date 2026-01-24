@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useMemo } from 'react';
-import { PlusCircle, Upload, Download, MoreHorizontal, Loader2, AlertCircle, CheckCircle, Search, ArrowUpDown } from 'lucide-react';
+import { PlusCircle, Upload, Download, Loader2, AlertCircle, CheckCircle, Search, ArrowUpDown } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -97,26 +97,7 @@ export default function DriversPage() {
 
 
 
-  const handleToggleStatus = async (driver: Driver) => {
-    if (!firestore) return;
-    const currentStatus = driver.status || 'active';
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
-    const driverDoc = doc(firestore, 'drivers', driver.id);
-    const updates: any = { status: newStatus };
-
-    // If deactivating, clear the Unit ID
-    if (newStatus === 'inactive') {
-      updates.unitId = '';
-    }
-
-    try {
-      await setDocumentNonBlocking(driverDoc, updates, { merge: true });
-    } catch (error) {
-      console.error('Error updating driver status:', error);
-      alert('Failed to update driver status.');
-    }
-  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -371,9 +352,7 @@ export default function DriversPage() {
                 <TableHead>Contact</TableHead>
                 <TableHead>Pay Structure</TableHead>
                 <TableHead className="text-right">Week Deduct</TableHead>
-                <TableHead className="w-[80px]">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
+
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -423,26 +402,7 @@ export default function DriversPage() {
                         <span className="text-xs">Esc: <span className="font-mono text-foreground">{formatCurrency(driver.recurringDeductions.escrow)}</span></span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Toggle menu</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onSelect={() => {
-                            // Defer opening the dialog to allow the dropdown to close and clean up focus/scroll locks
-                            setTimeout(() => handleEditDriver(driver), 50);
-                          }}>View Profile</DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleToggleStatus(driver); }}>
-                            {driver.status === 'inactive' ? 'Activate Driver' : 'Deactivate Driver'}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+
                   </TableRow>
                 ))
 
