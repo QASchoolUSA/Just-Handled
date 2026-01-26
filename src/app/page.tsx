@@ -12,7 +12,7 @@ import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay, parseISO } from 'date-fns';
 
 // Helper to safely parse numbers that might have currency symbols, commas, etc.
@@ -34,6 +34,12 @@ const parseDateAny = (dateStr: string) => {
 
 export default function DashboardPage() {
   const firestore = useFirestore();
+
+  type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   // Calculate date range based on selected period
   const dateRange = useMemo(() => {
@@ -74,35 +80,24 @@ export default function DashboardPage() {
   }, [selectedPeriod, customStartDate, customEndDate]);
 
   // Server-side Query Configurations
-  const loadsQueryConfig = useMemo(() => {
+  const loadsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
     const startStr = format(dateRange.start, 'yyyy-MM-dd');
-    // For end date, we might want to include today? '2025-05-01'
-    // String comparison works for ISO dates.
-    // However, if DB has exact matches, querying '>= start' is usually enough for history.
-    // Let's do a simple range or just start date to be safe/simple?
-    // Let's do >= startStr.
-    return {
-      path: 'loads',
-      where: [['pickupDate', '>=', startStr]] as [string, any, any][] // array of where clauses
-    };
-  }, [dateRange]);
+    return query(collection(firestore, 'loads'), where('pickupDate', '>=', startStr));
+  }, [firestore, dateRange]);
 
-  const expensesQueryConfig = useMemo(() => {
+  const expensesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
     const startStr = format(dateRange.start, 'yyyy-MM-dd');
-    return {
-      path: 'expenses',
-      where: [['date', '>=', startStr]] as [string, any, any][]
-    };
-  }, [dateRange]);
+    return query(collection(firestore, 'expenses'), where('date', '>=', startStr));
+  }, [firestore, dateRange]);
 
   // Drivers we typically fetch all because they are reference data (and list is small)
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
 
-  // Note: We use 'any' casting for the query config to match the hook's expected simplistic interface if needed,
-  // but based on use-collection.tsx it accepts { path, where: [...] }.
-  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQueryConfig);
+  const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
   const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection); // Keep fetching all drivers
-  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQueryConfig);
+  const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQuery);
 
   // Filter loads and expenses by period
   const filteredLoads = useMemo(() => {

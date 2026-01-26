@@ -838,9 +838,9 @@ export default function SettlementsPage() {
 
   const handleGenerateExpenseTemplate = () => {
     const csvData = [
-      ['Date', 'Description', 'Type', 'Driver Name', 'Amount'],
-      ['2023-10-01', 'Trailer Repair', 'company', '', '500.00'],
-      ['2023-10-02', 'Fuel Advance', 'driver', 'John Doe', '200.00'],
+      ['Date', 'Description', 'Type', 'Driver Name', 'Unit ID', 'Amount'],
+      ['2023-10-01', 'Trailer Repair', 'company', '', '', '500.00'],
+      ['2023-10-02', 'Fuel Advance', 'driver', 'John Doe', '1001', '200.00'],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -875,13 +875,22 @@ export default function SettlementsPage() {
             const type = row['Type']?.toLowerCase() === 'driver' ? 'driver' : 'company';
             let driverId: string | undefined = undefined;
 
-            if (type === 'driver' && row['Driver Name']) {
-              const driver = drivers.find(d => `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim());
-              if (driver) {
-                driverId = driver.id;
-              } else {
-                // Fallback or warning if driver not found but type is driver
-                console.warn(`Driver not found for expense: ${row['Driver Name']}`);
+            if (type === 'driver') {
+              // Try finding by Unit ID first
+              if (row['Unit ID']) {
+                const driver = drivers.find(d => d.unitId === row['Unit ID'].trim());
+                if (driver) driverId = driver.id;
+              }
+
+              // Fallback to Name if no ID found yet
+              if (!driverId && row['Driver Name']) {
+                const driver = drivers.find(d => `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim());
+                if (driver) {
+                  driverId = driver.id;
+                } else {
+                  // Fallback or warning if driver not found not even by name
+                  console.warn(`Driver not found for expense: Name=${row['Driver Name']}, Unit=${row['Unit ID']}`);
+                }
               }
             }
 
@@ -1211,13 +1220,14 @@ export default function SettlementsPage() {
                       <TableHead>Description</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Driver</TableHead>
+                      <TableHead>Unit ID</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
-                      <TableRow><TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell></TableRow>
                     ) : filteredExpenses.length > 0 ? (
                       filteredExpenses.map((expense) => (
                         <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
@@ -1229,6 +1239,13 @@ export default function SettlementsPage() {
                               if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
                               const d = driverMap.get(expense.driverId);
                               return d ? toTitleCase(`${d.firstName} ${d.lastName}`) : <span className="text-muted-foreground">-</span>;
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
+                              const d = driverMap.get(expense.driverId);
+                              return d && d.unitId ? <span className="font-mono text-xs">{d.unitId}</span> : <span className="text-muted-foreground">-</span>;
                             })()}
                           </TableCell>
                           <TableCell>{formatCurrency(expense.amount)}</TableCell>
@@ -1250,7 +1267,7 @@ export default function SettlementsPage() {
                         </TableRow>
                       ))
                     ) : (
-                      <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No expenses recorded.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No expenses recorded.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
