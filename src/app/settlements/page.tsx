@@ -1288,26 +1288,26 @@ export default function SettlementsPage() {
             <TabsContent value="drivers" className="space-y-4">
               {/* Aggregate Summary Header for Drivers */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <Card className="bg-blue-50/50 border-blue-100">
+                <Card className="bg-blue-50/50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-blue-600 font-medium">Total Gross Pay</span>
-                    <span className="text-2xl font-bold text-blue-700">
+                    <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Gross Pay</span>
+                    <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">
                       {formatCurrency(settlementSummary.reduce((sum, s) => sum + s.grossPay, 0))}
                     </span>
                   </CardContent>
                 </Card>
-                <Card className="bg-red-50/50 border-red-100">
+                <Card className="bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-red-600 font-medium">Total Deductions</span>
-                    <span className="text-2xl font-bold text-red-700">
+                    <span className="text-sm text-red-600 dark:text-red-400 font-medium">Total Deductions</span>
+                    <span className="text-2xl font-bold text-red-700 dark:text-red-300">
                       {formatCurrency(settlementSummary.reduce((sum, s) => sum + s.totalDeductions, 0))}
                     </span>
                   </CardContent>
                 </Card>
-                <Card className="bg-green-50/50 border-green-100">
+                <Card className="bg-green-50/50 dark:bg-green-900/20 border-green-100 dark:border-green-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-green-600 font-medium">Total Net Pay</span>
-                    <span className="text-2xl font-bold text-green-700">
+                    <span className="text-sm text-green-600 dark:text-green-400 font-medium">Total Net Pay</span>
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-300">
                       {formatCurrency(settlementSummary.reduce((sum, s) => sum + s.netPay, 0))}
                     </span>
                   </CardContent>
@@ -1385,26 +1385,26 @@ export default function SettlementsPage() {
             <TabsContent value="owners" className="space-y-4">
               {/* Aggregate Summary Header for Owners */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <Card className="bg-blue-50/50 border-blue-100">
+                <Card className="bg-blue-50/50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-blue-600 font-medium">Total Gross Pay</span>
-                    <span className="text-2xl font-bold text-blue-700">
+                    <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Gross Pay</span>
+                    <span className="text-2xl font-bold text-blue-700 dark:text-blue-300">
                       {formatCurrency(ownerSettlementSummary.reduce((sum, s) => sum + s.grossPay, 0))}
                     </span>
                   </CardContent>
                 </Card>
-                <Card className="bg-red-50/50 border-red-100">
+                <Card className="bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-red-600 font-medium">Total Deductions</span>
-                    <span className="text-2xl font-bold text-red-700">
+                    <span className="text-sm text-red-600 dark:text-red-400 font-medium">Total Deductions</span>
+                    <span className="text-2xl font-bold text-red-700 dark:text-red-300">
                       {formatCurrency(ownerSettlementSummary.reduce((sum, s) => sum + s.totalDeductions, 0))}
                     </span>
                   </CardContent>
                 </Card>
-                <Card className="bg-green-50/50 border-green-100">
+                <Card className="bg-green-50/50 dark:bg-green-900/20 border-green-100 dark:border-green-800">
                   <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-                    <span className="text-sm text-green-600 font-medium">Total Net Pay</span>
-                    <span className="text-2xl font-bold text-green-700">
+                    <span className="text-sm text-green-600 dark:text-green-400 font-medium">Total Net Pay</span>
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-300">
                       {formatCurrency(ownerSettlementSummary.reduce((sum, s) => sum + s.netPay, 0))}
                     </span>
                   </CardContent>
