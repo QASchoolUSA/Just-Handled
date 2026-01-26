@@ -122,11 +122,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   >
                     <Avatar className="h-8 w-8 rounded-lg border border-border/50">
                       <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-medium">
-                        {user?.email?.charAt(0).toUpperCase() || 'U'}
+                        {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                      <span className="truncate font-semibold">{user?.email?.split('@')[0] || 'User'}</span>
+                      <span className="truncate font-semibold">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
                       <span className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</span>
                     </div>
                     <MoreHorizontal className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
@@ -142,11 +142,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                       <Avatar className="h-8 w-8 rounded-lg border border-border/50">
                         <AvatarFallback className="rounded-lg bg-primary/10 text-primary font-medium">
-                          {user?.email?.charAt(0).toUpperCase() || 'U'}
+                          {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
-                        <span className="truncate font-semibold">{user?.email?.split('@')[0] || 'User'}</span>
+                        <span className="truncate font-semibold">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
                         <span className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</span>
                       </div>
                     </div>
@@ -156,6 +156,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
                       <Sparkles className="h-4 w-4 text-amber-500" />
                       Upgrade to Pro
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild className="gap-2 rounded-lg cursor-pointer">
+                      <Link href="/profile">
+                        <Users className="h-4 w-4" />
+                        <span>Profile</span>
+                      </Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuSub>
