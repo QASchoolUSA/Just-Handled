@@ -78,6 +78,7 @@ export type Expense = {
   type: 'company' | 'driver';
   driverId?: string;
   date: string;
+  category?: 'addition' | 'deduction';
 };
 
 export type AccountSettings = {
@@ -109,9 +110,11 @@ export type SettlementSummary = {
   unitId?: string;
   grossPay: number;
   totalDeductions: number;
+  totalAdditions: number;
   netPay: number;
   loads: Load[];
   deductions: (Expense & { isRecurring?: boolean })[];
+  additions: (Expense & { isRecurring?: boolean })[];
 };
 
 export type OwnerSettlementSummary = {
@@ -120,7 +123,9 @@ export type OwnerSettlementSummary = {
   unitId?: string;
   grossPay: number;
   totalDeductions: number;
+  totalAdditions: number;
   netPay: number;
   loads: Load[];
   deductions: (Expense & { isRecurring?: boolean })[];
+  additions: (Expense & { isRecurring?: boolean })[];
 };

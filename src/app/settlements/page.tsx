@@ -444,9 +444,11 @@ export default function SettlementsPage() {
         unitId: driver.unitId,
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
+        totalAdditions: 0,
         netPay: 0,
         loads: [],
         deductions: recurringDeductions,
+        additions: [],
       });
     });
 
@@ -474,17 +476,22 @@ export default function SettlementsPage() {
       if (expense.type === 'driver' && expense.driverId) {
         const summary = summaryByDriver.get(expense.driverId);
         if (summary) {
-          summary.totalDeductions += expense.amount;
-          summary.deductions.push(expense);
+          if (expense.category === 'addition') {
+            summary.totalAdditions += expense.amount;
+            summary.additions.push(expense);
+          } else {
+            summary.totalDeductions += expense.amount;
+            summary.deductions.push(expense);
+          }
         }
       }
     });
 
     summaryByDriver.forEach(summary => {
-      summary.netPay = summary.grossPay - summary.totalDeductions;
+      summary.netPay = summary.grossPay + summary.totalAdditions - summary.totalDeductions;
     });
 
-    return Array.from(summaryByDriver.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
+    return Array.from(summaryByDriver.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring) || s.additions.length > 0);
   }, [loads, expenses, drivers, driverMap, weekStart, weekEnd]);
 
   // --- Owner Settlement Calculation ---
@@ -511,9 +518,11 @@ export default function SettlementsPage() {
         unitId: owner.unitId,
         grossPay: 0,
         totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
+        totalAdditions: 0,
         netPay: 0,
         loads: [],
         deductions: recurringDeductions,
+        additions: [],
       });
     });
 
@@ -539,7 +548,7 @@ export default function SettlementsPage() {
     });
 
     summaryByOwner.forEach(summary => {
-      summary.netPay = summary.grossPay - summary.totalDeductions;
+      summary.netPay = summary.grossPay + summary.totalAdditions - summary.totalDeductions;
     });
 
     return Array.from(summaryByOwner.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
@@ -1326,10 +1335,14 @@ export default function SettlementsPage() {
                     </Button>
                   </CardHeader>
                   <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-8 pb-8 border-b border-border/40">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center mb-8 pb-8 border-b border-border/40">
                       <div className="p-4 bg-muted/20 rounded-xl">
                         <p className="text-sm font-medium text-muted-foreground mb-1">Gross Pay</p>
                         <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
+                      </div>
+                      <div className="p-4 bg-muted/20 rounded-xl">
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Additions</p>
+                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalAdditions)}</p>
                       </div>
                       <div className="p-4 bg-muted/20 rounded-xl">
                         <p className="text-sm font-medium text-muted-foreground mb-1">Total Deductions</p>
@@ -1343,7 +1356,7 @@ export default function SettlementsPage() {
                     <div className="grid md:grid-cols-2 gap-8">
                       <div>
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
-                        <div className="rounded-lg border overflow-hidden">
+                        <div className="rounded-lg border overflow-hidden mb-6">
                           <Table>
                             <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
                             <TableBody>
@@ -1358,6 +1371,20 @@ export default function SettlementsPage() {
                             </TableBody>
                           </Table>
                         </div>
+
+                        {summary.additions.length > 0 && (
+                          <>
+                            <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Additions</h4>
+                            <div className="rounded-lg border overflow-hidden">
+                              <Table>
+                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                  {summary.additions.map((a, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>)}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div>
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Deductions</h4>
@@ -1423,10 +1450,14 @@ export default function SettlementsPage() {
                     </Button>
                   </CardHeader>
                   <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-8 pb-8 border-b border-border/40">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center mb-8 pb-8 border-b border-border/40">
                       <div className="p-4 bg-muted/20 rounded-xl">
                         <p className="text-sm font-medium text-muted-foreground mb-1">Gross Pay</p>
                         <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
+                      </div>
+                      <div className="p-4 bg-muted/20 rounded-xl">
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Additions</p>
+                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalAdditions)}</p>
                       </div>
                       <div className="p-4 bg-muted/20 rounded-xl">
                         <p className="text-sm font-medium text-muted-foreground mb-1">Total Deductions</p>
@@ -1464,6 +1495,20 @@ export default function SettlementsPage() {
                             </TableBody>
                           </Table>
                         </div>
+
+                        {summary.additions.length > 0 && (
+                          <>
+                            <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Additions</h4>
+                            <div className="rounded-lg border overflow-hidden">
+                              <Table>
+                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                  {summary.additions.map((a, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>)}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div>
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Deductions</h4>
@@ -1488,17 +1533,18 @@ export default function SettlementsPage() {
             </TabsContent>
           </Tabs>
         </TabsContent>
-      </Tabs>
+      </Tabs >
 
       {/* Forms remain unchanged */}
-      <LoadForm
+      < LoadForm
         isOpen={isLoadFormOpen}
         onOpenChange={setIsLoadFormOpen}
         onSave={handleSaveLoad}
         load={editingLoad}
-        drivers={drivers || []}
+        drivers={drivers || []
+        }
       />
-      <ExpenseForm
+      < ExpenseForm
         isOpen={isExpenseFormOpen}
         onOpenChange={setIsExpenseFormOpen}
         onSave={handleSaveExpense}
@@ -1506,7 +1552,7 @@ export default function SettlementsPage() {
         drivers={drivers || []}
       />
 
-      <Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen}>
+      < Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen} >
         <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
@@ -1550,7 +1596,7 @@ export default function SettlementsPage() {
             <Button onClick={() => setIsImportResultOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog >
     </div >
   );
 }

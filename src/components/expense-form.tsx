@@ -41,6 +41,7 @@ const formSchema = z.object({
   description: z.string().min(1, { message: 'Description is required.' }),
   amount: z.coerce.number().min(0.01, { message: 'Amount must be positive.' }),
   type: z.enum(['company', 'driver']),
+  category: z.enum(['addition', 'deduction']).optional(),
   driverId: z.string().optional(),
 }).refine(data => {
   if (data.type === 'driver' && !data.driverId) {
@@ -71,6 +72,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       description: '',
       amount: 0,
       type: 'company',
+      category: 'deduction',
       driverId: undefined,
     },
   });
@@ -87,6 +89,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
           description: '',
           amount: 0,
           type: 'company',
+          category: 'deduction',
           driverId: undefined,
         });
       }
@@ -207,6 +210,30 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                 </FormItem>
               )}
             />
+
+            {expenseType === 'driver' && (
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="deduction">Deduction (Negative)</SelectItem>
+                        <SelectItem value="addition">Addition (Positive)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {expenseType === 'driver' && (
               <FormField
