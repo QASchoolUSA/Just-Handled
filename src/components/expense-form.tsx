@@ -40,19 +40,10 @@ const formSchema = z.object({
   date: z.date({ required_error: 'A date is required.' }),
   description: z.string().min(1, { message: 'Description is required.' }),
   amount: z.coerce.number().min(0.01, { message: 'Amount must be positive.' }),
-  type: z.enum(['company', 'driver']),
+  gallons: z.coerce.number().optional(),
+  unitId: z.string().min(1, { message: 'Unit ID is required.' }),
   category: z.enum(['addition', 'deduction']).optional(),
-  driverId: z.string().optional(),
-}).refine(data => {
-  if (data.type === 'driver' && !data.driverId) {
-    return false;
-  }
-  return true;
-}, {
-  message: 'A driver is required for driver deductions.',
-  path: ['driverId'],
 });
-
 
 type ExpenseFormValues = z.infer<typeof formSchema>;
 
@@ -71,40 +62,69 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       date: new Date(),
       description: '',
       amount: 0,
-      type: 'company',
+      gallons: 0,
+      unitId: '',
       category: 'deduction',
-      driverId: undefined,
     },
   });
 
-  const expenseType = form.watch('type');
+  const selectedUnitId = form.watch('unitId');
+
+  // Derive if the selected unit belongs to a driver
+  const matchedDriver = React.useMemo(() => {
+    if (!selectedUnitId) return undefined;
+    return drivers.find(d => d.unitId === selectedUnitId);
+  }, [selectedUnitId, drivers]);
 
   React.useEffect(() => {
     if (isOpen) {
       if (expense) {
-        form.reset({ ...expense, date: new Date(expense.date) });
+        form.reset({
+          date: new Date(expense.date),
+          description: expense.description,
+          amount: expense.amount,
+          gallons: expense.gallons || 0,
+          unitId: expense.unitId || '',
+          category: expense.category || 'deduction',
+        });
       } else {
         form.reset({
           date: new Date(),
           description: '',
           amount: 0,
-          type: 'company',
+          gallons: 0,
+          unitId: '',
           category: 'deduction',
-          driverId: undefined,
         });
       }
     }
   }, [expense, form, isOpen]);
 
-  function onSubmit(values: ExpenseFormValues) {
-    const dataToSave: Omit<Expense, 'id'> = {
-      ...values,
-      date: values.date.toISOString(),
-    };
+  // Extract unique unit IDs from drivers
+  const unitIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    drivers.forEach(d => {
+      if (d.unitId) ids.add(d.unitId);
+    });
+    return Array.from(ids).sort();
+  }, [drivers]);
 
-    if (values.type === 'company') {
-      delete dataToSave.driverId;
-    }
+  function onSubmit(values: ExpenseFormValues) {
+    // Derive type and driverId
+    const driver = drivers.find(d => d.unitId === values.unitId);
+
+    const dataToSave: Omit<Expense, 'id'> = {
+      date: values.date.toISOString(),
+      description: values.description,
+      amount: values.amount,
+      gallons: values.gallons,
+      unitId: values.unitId,
+      // If matches a driver, it's a driver expense (deduction/addition)
+      // Otherwise default to company
+      type: driver ? 'driver' : 'company',
+      driverId: driver?.id,
+      category: driver ? values.category : undefined,
+    };
 
     onSave(dataToSave);
   }
@@ -115,7 +135,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
         <DialogHeader>
           <DialogTitle>{expense ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
           <DialogDescription>
-            {expense ? 'Update this expense record.' : 'Add a new company expense or driver deduction.'}
+            {expense ? 'Update this expense record.' : 'Add a new expense record.'}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -161,6 +181,30 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="unitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit ID</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Unit ID" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {unitIds.map(id => (
+                        <SelectItem key={id} value={id}>{id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="description"
@@ -175,49 +219,43 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Expense Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+            <div className="flex gap-4">
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Amount</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select an expense type" />
-                      </SelectTrigger>
+                      <Input type="number" step="0.01" {...field} />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="company">Company Expense</SelectItem>
-                      <SelectItem value="driver">Driver Deduction</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {expenseType === 'driver' && (
+              <FormField
+                control={form.control}
+                name="gallons"
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Gallons (Optional)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {matchedDriver && (
               <FormField
                 control={form.control}
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category</FormLabel>
+                    <FormLabel>Category (Driver Detection)</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -227,31 +265,6 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                       <SelectContent>
                         <SelectItem value="deduction">Deduction (Negative)</SelectItem>
                         <SelectItem value="addition">Addition (Positive)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {expenseType === 'driver' && (
-              <FormField
-                control={form.control}
-                name="driverId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Driver</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Assign to a driver" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {drivers.map(driver => (
-                          <SelectItem key={driver.id} value={driver.id}>{driver.firstName} {driver.lastName}</SelectItem>
-                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />

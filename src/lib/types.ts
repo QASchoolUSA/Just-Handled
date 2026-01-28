@@ -77,8 +77,10 @@ export type Expense = {
   amount: number;
   type: 'company' | 'driver';
   driverId?: string;
+  unitId?: string;
   date: string;
   category?: 'addition' | 'deduction';
+  gallons?: number;
 };
 
 export type AccountSettings = {

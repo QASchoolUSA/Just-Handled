@@ -847,9 +847,9 @@ export default function SettlementsPage() {
 
   const handleGenerateExpenseTemplate = () => {
     const csvData = [
-      ['Date', 'Description', 'Type', 'Driver Name', 'Unit ID', 'Amount'],
-      ['2023-10-01', 'Trailer Repair', 'company', '', '', '500.00'],
-      ['2023-10-02', 'Fuel Advance', 'driver', 'John Doe', '1001', '200.00'],
+      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons'],
+      ['2023-10-01', 'Trailer Repair', '1001', '500.00', ''],
+      ['2023-10-02', 'Fuel', '1001', '200.00', '50'],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -878,37 +878,31 @@ export default function SettlementsPage() {
           const importedExpenses = results.data as any[];
           let successCount = 0;
 
+          const parseNumber = (value: any) => {
+            if (typeof value === 'number') return value;
+            if (!value) return 0;
+            const cleaned = String(value).replace(/[$,\s]/g, '').trim();
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? 0 : parsed;
+          };
+
           for (const row of importedExpenses) {
             if (!row['Description'] || !row['Amount']) continue;
 
-            const type = row['Type']?.toLowerCase() === 'driver' ? 'driver' : 'company';
-            let driverId: string | undefined = undefined;
-
-            if (type === 'driver') {
-              // Try finding by Unit ID first
-              if (row['Unit ID']) {
-                const driver = drivers.find(d => d.unitId === row['Unit ID'].trim());
-                if (driver) driverId = driver.id;
-              }
-
-              // Fallback to Name if no ID found yet
-              if (!driverId && row['Driver Name']) {
-                const driver = drivers.find(d => `${d.firstName} ${d.lastName}`.toLowerCase().trim() === row['Driver Name'].toLowerCase().trim());
-                if (driver) {
-                  driverId = driver.id;
-                } else {
-                  // Fallback or warning if driver not found not even by name
-                  console.warn(`Driver not found for expense: Name=${row['Driver Name']}, Unit=${row['Unit ID']}`);
-                }
-              }
-            }
+            const unitId = row['Unit ID']?.trim() || '';
+            const driver = drivers.find(d => d.unitId === unitId);
+            const type = driver ? 'driver' : 'company';
+            const driverId = driver?.id;
+            const gallons = parseFloat(row['Gallons']) || 0;
 
             const newExpense = {
               date: row['Date'] || new Date().toISOString(),
               description: row['Description'],
-              amount: parseFloat(row['Amount']) || 0,
+              amount: parseNumber(row['Amount']) || 0,
               type,
               driverId,
+              unitId,
+              gallons,
             };
 
             if (expensesCollectionRef) {
@@ -1230,6 +1224,7 @@ export default function SettlementsPage() {
                       <TableHead>Type</TableHead>
                       <TableHead>Driver</TableHead>
                       <TableHead>Unit ID</TableHead>
+                      <TableHead>Gallons</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                     </TableRow>
@@ -1252,11 +1247,14 @@ export default function SettlementsPage() {
                           </TableCell>
                           <TableCell>
                             {(() => {
+                              // Prefer expense.unitId, fall back to driver's unitId
+                              if (expense.unitId) return <span className="font-mono text-xs">{expense.unitId}</span>;
                               if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
                               const d = driverMap.get(expense.driverId);
                               return d && d.unitId ? <span className="font-mono text-xs">{d.unitId}</span> : <span className="text-muted-foreground">-</span>;
                             })()}
                           </TableCell>
+                          <TableCell>{expense.gallons ? expense.gallons : '-'}</TableCell>
                           <TableCell>{formatCurrency(expense.amount)}</TableCell>
                           <TableCell>
                             <DropdownMenu>
