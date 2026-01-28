@@ -42,6 +42,7 @@ const formSchema = z.object({
   amount: z.coerce.number().min(0.01, { message: 'Amount must be positive.' }),
   gallons: z.coerce.number().optional(),
   unitId: z.string().min(1, { message: 'Unit ID is required.' }),
+  locationState: z.string().max(2, { message: 'State must be 2 characters.' }).optional(),
   category: z.enum(['addition', 'deduction']).optional(),
 });
 
@@ -64,6 +65,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       amount: 0,
       gallons: 0,
       unitId: '',
+      locationState: '',
       category: 'deduction',
     },
   });
@@ -85,6 +87,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
           amount: expense.amount,
           gallons: expense.gallons || 0,
           unitId: expense.unitId || '',
+          locationState: expense.locationState || '',
           category: expense.category || 'deduction',
         });
       } else {
@@ -94,6 +97,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
           amount: 0,
           gallons: 0,
           unitId: '',
+          locationState: '',
           category: 'deduction',
         });
       }
@@ -119,6 +123,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       amount: values.amount,
       gallons: values.gallons,
       unitId: values.unitId,
+      locationState: values.locationState?.toUpperCase(),
       // If matches a driver, it's a driver expense (deduction/addition)
       // Otherwise default to company
       type: driver ? 'driver' : 'company',
@@ -239,9 +244,23 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
                 name="gallons"
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>Gallons (Optional)</FormLabel>
+                    <FormLabel>Gallons</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="locationState"
+                render={({ field }) => (
+                  <FormItem className="w-24">
+                    <FormLabel>State</FormLabel>
+                    <FormControl>
+                      <Input placeholder="NY" maxLength={2} {...field} onChange={e => field.onChange(e.target.value.toUpperCase())} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

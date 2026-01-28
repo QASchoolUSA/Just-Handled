@@ -81,6 +81,7 @@ export type Expense = {
   date: string;
   category?: 'addition' | 'deduction';
   gallons?: number;
+  locationState?: string;
 };
 
 export type AccountSettings = {

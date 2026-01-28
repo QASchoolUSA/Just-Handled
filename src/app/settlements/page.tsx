@@ -847,9 +847,9 @@ export default function SettlementsPage() {
 
   const handleGenerateExpenseTemplate = () => {
     const csvData = [
-      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons'],
-      ['2023-10-01', 'Trailer Repair', '1001', '500.00', ''],
-      ['2023-10-02', 'Fuel', '1001', '200.00', '50'],
+      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State'],
+      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY'],
+      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA'],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -894,6 +894,7 @@ export default function SettlementsPage() {
             const type = driver ? 'driver' : 'company';
             const driverId = driver?.id;
             const gallons = parseFloat(row['Gallons']) || 0;
+            const locationState = row['State']?.trim().toUpperCase() || '';
 
             const newExpense = {
               date: row['Date'] || new Date().toISOString(),
@@ -903,6 +904,7 @@ export default function SettlementsPage() {
               driverId,
               unitId,
               gallons,
+              locationState,
             };
 
             if (expensesCollectionRef) {
@@ -1225,6 +1227,7 @@ export default function SettlementsPage() {
                       <TableHead>Driver</TableHead>
                       <TableHead>Unit ID</TableHead>
                       <TableHead>Gallons</TableHead>
+                      <TableHead>State</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
                     </TableRow>
@@ -1255,6 +1258,7 @@ export default function SettlementsPage() {
                             })()}
                           </TableCell>
                           <TableCell>{expense.gallons ? expense.gallons : '-'}</TableCell>
+                          <TableCell>{expense.locationState || '-'}</TableCell>
                           <TableCell>{formatCurrency(expense.amount)}</TableCell>
                           <TableCell>
                             <DropdownMenu>
