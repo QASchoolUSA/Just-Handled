@@ -29,9 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Expense, Driver } from '@/lib/types';
+import type { Expense, Driver, Owner } from '@/lib/types';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { CalendarIcon } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from './ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -44,6 +45,7 @@ const formSchema = z.object({
   unitId: z.string().min(1, { message: 'Unit ID is required.' }),
   locationState: z.string().max(2, { message: 'State must be 2 characters.' }).optional(),
   category: z.enum(['addition', 'deduction']).optional(),
+  type: z.enum(['driver', 'owner', 'company']),
 });
 
 type ExpenseFormValues = z.infer<typeof formSchema>;
@@ -54,9 +56,10 @@ interface ExpenseFormProps {
   onSave: (expense: Omit<Expense, 'id'>) => void;
   expense?: Expense;
   drivers: Driver[];
+  owners: Owner[];
 }
 
-export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: ExpenseFormProps) {
+export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, owners }: ExpenseFormProps) {
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -67,16 +70,29 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       unitId: '',
       locationState: '',
       category: 'deduction',
+      type: 'company',
     },
   });
 
   const selectedUnitId = form.watch('unitId');
+  const selectedType = form.watch('type');
 
-  // Derive if the selected unit belongs to a driver
-  const matchedDriver = React.useMemo(() => {
-    if (!selectedUnitId) return undefined;
-    return drivers.find(d => d.unitId === selectedUnitId);
-  }, [selectedUnitId, drivers]);
+  // Derive if the selected unit belongs to a driver or owner for auto-selection suggestion
+  // (Only if user hasn't explicitly changed it? For now, we manually select)
+  React.useEffect(() => {
+    if (selectedUnitId && !expense) {
+      const driver = drivers.find(d => d.unitId === selectedUnitId);
+      const owner = owners.find(o => o.unitId === selectedUnitId);
+
+      if (driver) {
+        form.setValue('type', 'driver');
+      } else if (owner) {
+        form.setValue('type', 'owner');
+      } else {
+        form.setValue('type', 'company');
+      }
+    }
+  }, [selectedUnitId, drivers, owners, form, expense]);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -89,6 +105,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
           unitId: expense.unitId || '',
           locationState: expense.locationState || '',
           category: expense.category || 'deduction',
+          type: expense.type,
         });
       } else {
         form.reset({
@@ -99,6 +116,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
           unitId: '',
           locationState: '',
           category: 'deduction',
+          type: 'company',
         });
       }
     }
@@ -110,12 +128,15 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
     drivers.forEach(d => {
       if (d.unitId) ids.add(d.unitId);
     });
+    owners.forEach(o => {
+      if (o.unitId) ids.add(o.unitId);
+    });
     return Array.from(ids).sort();
-  }, [drivers]);
+  }, [drivers, owners]);
 
   function onSubmit(values: ExpenseFormValues) {
-    // Derive type and driverId
     const driver = drivers.find(d => d.unitId === values.unitId);
+    const owner = owners.find(o => o.unitId === values.unitId);
 
     const dataToSave: Omit<Expense, 'id'> = {
       date: values.date.toISOString(),
@@ -124,11 +145,10 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
       gallons: values.gallons,
       unitId: values.unitId,
       locationState: values.locationState?.toUpperCase(),
-      // If matches a driver, it's a driver expense (deduction/addition)
-      // Otherwise default to company
-      type: driver ? 'driver' : 'company',
-      driverId: driver?.id,
-      category: driver ? values.category : undefined,
+      type: values.type,
+      driverId: values.type === 'driver' && driver ? driver.id : undefined,
+      ownerId: values.type === 'owner' && owner ? owner.id : undefined,
+      category: values.category,
     };
 
     onSave(dataToSave);
@@ -268,13 +288,57 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers }: 
               />
             </div>
 
-            {matchedDriver && (
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel>Bill To</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      value={field.value}
+                      className="flex flex-row space-x-4"
+                    >
+                      <FormItem className="flex items-center space-x-2 space-y-0">
+                        <FormControl>
+                          <RadioGroupItem value="company" />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          Company
+                        </FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-2 space-y-0">
+                        <FormControl>
+                          <RadioGroupItem value="driver" />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          Driver
+                        </FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-2 space-y-0">
+                        <FormControl>
+                          <RadioGroupItem value="owner" />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          Owner
+                        </FormLabel>
+                      </FormItem>
+                    </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {(selectedType === 'driver' || selectedType === 'owner') && (
               <FormField
                 control={form.control}
                 name="category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category (Driver Detection)</FormLabel>
+                    <FormLabel>Category ({selectedType === 'driver' ? 'Driver' : 'Owner'} Deduction)</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                       <FormControl>
                         <SelectTrigger>

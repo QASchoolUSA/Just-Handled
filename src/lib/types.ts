@@ -75,8 +75,9 @@ export type Expense = {
   id: string;
   description: string;
   amount: number;
-  type: 'company' | 'driver';
+  type: 'company' | 'driver' | 'owner';
   driverId?: string;
+  ownerId?: string;
   unitId?: string;
   date: string;
   category?: 'addition' | 'deduction';

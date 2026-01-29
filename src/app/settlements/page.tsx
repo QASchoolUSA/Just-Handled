@@ -148,6 +148,7 @@ export default function SettlementsPage() {
   const [isExpenseFormOpen, setIsExpenseFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   const [activeTab, setActiveTab] = useState('loads');
+  const [expenseFilter, setExpenseFilter] = useState<'all' | 'driver' | 'owner' | 'company'>('all');
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
@@ -245,9 +246,14 @@ export default function SettlementsPage() {
       // const expenseDate = new Date(expense.date);
       // if (!isWithinInterval(expenseDate, weekInterval)) return false;
 
+      // Type Filter
+      if (expenseFilter !== 'all') {
+        if (expense.type !== expenseFilter) return false;
+      }
+
       return true;
     });
-  }, [expenses, weekStart, weekEnd]);
+  }, [expenses, weekStart, weekEnd, expenseFilter]);
 
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
@@ -257,123 +263,6 @@ export default function SettlementsPage() {
 
 
   // --- Data Migration (Robust) ---
-  const handleMigrateData = async () => {
-    if (!firestore || !loadsCollectionRef) return;
-
-    // Helper to parse dd-MMM-yy to ISO (Robust)
-    const parseLegacyDate = (dateStr: string) => {
-      const cleaned = dateStr.trim();
-
-      // 1. Manual Regex for US Short Date (M/d/yy) or (M/d/yyyy) which matches "1/15/25"
-      // This is the most reliable way to handle the user's specific format without timezone/locale ambiguity
-      const usDateMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-      if (usDateMatch) {
-        const month = parseInt(usDateMatch[1], 10);
-        const day = parseInt(usDateMatch[2], 10);
-        let year = parseInt(usDateMatch[3], 10);
-
-        if (year < 100) year += 2000; // Assume 20xx for 2 digits
-
-        // Return ISO YYYY-MM-DD
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      }
-
-      const formats = [
-        'dd-MMM-yy', 'd-MMM-yy', 'yyyy-MM-dd', 'dd/MM/yyyy',
-        'M/d/yy', 'MM/dd/yy', 'M/d/yyyy', 'MM/dd/yyyy',
-        'MM-dd-yyyy', 'M-d-yyyy', 'yyyy/MM/dd'
-      ];
-      for (const fmt of formats) {
-        try {
-          // date-fns parse implies strict format matching usually
-          const parsed = parse(cleaned, fmt, new Date());
-          if (!isNaN(parsed.getTime())) {
-            return format(parsed, 'yyyy-MM-dd');
-          }
-        } catch (e) { /* continue */ }
-      }
-
-      // Fallback: Native Date (very permissive)
-      try {
-        const native = new Date(cleaned);
-        if (!isNaN(native.getTime())) {
-          // Fix 2-digit years that might be interpreted as 19xx
-          if (native.getFullYear() < 2000) {
-            native.setFullYear(native.getFullYear() + 100);
-          }
-          if (native.getFullYear() > 2000) {
-            return format(native, 'yyyy-MM-dd');
-          }
-        }
-      } catch (e) { /* continue */ }
-
-      return null;
-    };
-    const isIsoDate = (dateStr: string) => /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
-
-    if (!confirm('This will verify all records in the database and convert legacy dates to ISO format. Continue?')) return;
-
-    let updatedCount = 0;
-
-    // 1. Migrate Loads
-    const loadsSnapshot = await getDocs(loadsCollectionRef);
-    for (const docSnap of loadsSnapshot.docs) {
-      const load = docSnap.data() as Load;
-      let updates: any = {};
-
-      if (load.pickupDate && !isIsoDate(load.pickupDate)) {
-        const iso = parseLegacyDate(load.pickupDate);
-        if (iso) updates.pickupDate = iso;
-      }
-      if (load.deliveryDate && !isIsoDate(load.deliveryDate)) {
-        const iso = parseLegacyDate(load.deliveryDate);
-        if (iso) updates.deliveryDate = iso;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        await setDocumentNonBlocking(doc(firestore, 'loads', docSnap.id), updates, { merge: true });
-        updatedCount++;
-      }
-    }
-
-    // 2. Migrate Expenses
-    if (expensesCollectionRef) {
-      const expensesSnapshot = await getDocs(expensesCollectionRef);
-      console.log(`Scanning ${expensesSnapshot.size} expenses for legacy dates...`); // Debug log
-      let expenseFound = 0;
-      let expenseFixed = 0;
-
-      for (const docSnap of expensesSnapshot.docs) {
-        const expense = docSnap.data() as Expense;
-        let updates: any = {};
-
-        if (expense.date && !isIsoDate(expense.date)) {
-          expenseFound++;
-          const iso = parseLegacyDate(expense.date);
-          if (iso) {
-            updates.date = iso;
-            expenseFixed++;
-          }
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await setDocumentNonBlocking(doc(firestore, 'expenses', docSnap.id), updates, { merge: true });
-          updatedCount++;
-        }
-      }
-
-      alert(`Migration Status:\n\nScanned Expenses: ${expensesSnapshot.size}\nFound Legacy Dates: ${expenseFound}\nFixed Dates: ${expenseFixed}\n\nTotal Updates: ${updatedCount}`);
-    }
-
-
-    if (updatedCount === 0) {
-      alert("Migration ran but updated 0 records. The date format might not match known patterns.");
-    } else {
-      alert(`Migration Complete. Updated ${updatedCount} records. The page will reload.`);
-      window.location.reload();
-    }
-  };
-
 
 
   const handleAnalyzeData = async () => {
@@ -619,13 +508,34 @@ export default function SettlementsPage() {
       }
     });
 
+    // Populate deductions/additions from expenses for Owners
+    expenses.forEach(expense => {
+      const expenseDate = new Date(expense.date);
+      if (!isWithinInterval(expenseDate, weekInterval)) return;
+
+
+      if (expense.type === 'owner' && expense.ownerId) {
+        const summary = summaryByOwner.get(expense.ownerId);
+        if (summary) {
+          if (expense.category === 'addition') {
+            summary.totalAdditions += expense.amount;
+            summary.additions.push(expense);
+          } else {
+            // Treat specific owner expenses as deductions from their pay
+            summary.totalDeductions += expense.amount;
+            summary.deductions.push(expense);
+          }
+        }
+      }
+    });
+
     summaryByOwner.forEach(summary => {
       summary.netPay = summary.grossPay + summary.totalAdditions - summary.totalDeductions;
     });
 
     return Array.from(summaryByOwner.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
 
-  }, [loads, owners, weekStart, weekEnd]);
+  }, [loads, owners, expenses, weekStart, weekEnd]);
 
 
   // --- CSV Export ---
@@ -931,9 +841,9 @@ export default function SettlementsPage() {
 
   const handleGenerateExpenseTemplate = () => {
     const csvData = [
-      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State'],
-      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY'],
-      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA'],
+      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State', 'Bill To (D/O/C)'],
+      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY', 'D'],
+      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA', 'C'],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -958,7 +868,7 @@ export default function SettlementsPage() {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        if (results.data && firestore && expensesCollectionRef && drivers) {
+        if (results.data && firestore && expensesCollectionRef && drivers && owners) {
           const importedExpenses = results.data as any[];
           let successCount = 0;
 
@@ -974,9 +884,33 @@ export default function SettlementsPage() {
             if (!row['Description'] || !row['Amount']) continue;
 
             const unitId = row['Unit ID']?.trim() || '';
-            const driver = drivers.find(d => d.unitId === unitId);
-            const type = driver ? 'driver' : 'company';
-            const driverId = driver?.id;
+            const billTo = row['Bill To (D/O/C)']?.trim().toUpperCase() || '';
+
+            const matchedDriver = drivers.find(d => d.unitId === unitId);
+            const matchedOwner = owners.find(o => o.unitId === unitId);
+
+            let type: 'driver' | 'owner' | 'company' = 'company';
+
+            if (billTo === 'D' || billTo === 'DRIVER') {
+              type = 'driver';
+            } else if (billTo === 'O' || billTo === 'OWNER') {
+              type = 'owner';
+            } else if (billTo === 'C' || billTo === 'COMPANY') {
+              type = 'company';
+            } else {
+              // Formatting fallback if Bill To is empty:
+              // If it matches a driver, assume driver (standard legacy behavior)
+              // If not driver but matches owner, assume owner? 
+              // Currently legacy behavior defaults to company if no driver.
+              // Let's favor Driver -> Owner -> Company
+              if (matchedDriver) type = 'driver';
+              else if (matchedOwner) type = 'owner';
+              else type = 'company';
+            }
+
+            const driverId = (type === 'driver' && matchedDriver) ? matchedDriver.id : undefined;
+            const ownerId = (type === 'owner' && matchedOwner) ? matchedOwner.id : undefined;
+
             const gallons = parseFloat(row['Gallons']) || 0;
             const locationState = row['State']?.trim().toUpperCase() || '';
 
@@ -986,6 +920,7 @@ export default function SettlementsPage() {
               amount: parseNumber(row['Amount']) || 0,
               type,
               driverId,
+              ownerId,
               unitId,
               gallons,
               locationState,
@@ -1088,9 +1023,7 @@ export default function SettlementsPage() {
           <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Journal
           </Button>
-          <Button onClick={handleMigrateData} variant="outline" className="rounded-xl text-yellow-600 border-yellow-200 bg-yellow-50 hover:bg-yellow-100">
-            Fix Dates
-          </Button>
+
           {activeTab === 'summary' && (
             <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
               <Download className="mr-2 h-4 w-4" /> Download All Statements
@@ -1287,6 +1220,40 @@ export default function SettlementsPage() {
 
               {/* Toolbar */}
               <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                <div className="flex p-1 bg-muted/50 rounded-lg border border-border/50">
+                  <Button
+                    variant={expenseFilter === 'all' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExpenseFilter('all')}
+                    className="h-7 text-xs px-3"
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={expenseFilter === 'driver' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExpenseFilter('driver')}
+                    className="h-7 text-xs px-3"
+                  >
+                    Drivers
+                  </Button>
+                  <Button
+                    variant={expenseFilter === 'owner' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExpenseFilter('owner')}
+                    className="h-7 text-xs px-3"
+                  >
+                    Owners
+                  </Button>
+                  <Button
+                    variant={expenseFilter === 'company' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExpenseFilter('company')}
+                    className="h-7 text-xs px-3"
+                  >
+                    Company
+                  </Button>
+                </div>
                 {/* Actions - Grouped */}
                 <div className="flex flex-wrap gap-2 flex-1 xl:justify-end">
                   <input type="file" accept=".csv" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
@@ -1639,6 +1606,7 @@ export default function SettlementsPage() {
         onSave={handleSaveExpense}
         expense={editingExpense}
         drivers={drivers || []}
+        owners={owners || []}
       />
 
       < Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen} >
