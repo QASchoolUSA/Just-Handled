@@ -908,8 +908,8 @@ export default function SettlementsPage() {
               else type = 'company';
             }
 
-            const driverId = (type === 'driver' && matchedDriver) ? matchedDriver.id : undefined;
-            const ownerId = (type === 'owner' && matchedOwner) ? matchedOwner.id : undefined;
+            const driverId = (type === 'driver' && matchedDriver) ? matchedDriver.id : null;
+            const ownerId = (type === 'owner' && matchedOwner) ? matchedOwner.id : null;
 
             const gallons = parseFloat(row['Gallons']) || 0;
             const locationState = row['State']?.trim().toUpperCase() || '';
