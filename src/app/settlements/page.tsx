@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, isWithinInterval, parseISO, parse } from 'date-fns';
 import { Input } from '@/components/ui/input';
@@ -257,6 +257,7 @@ export default function SettlementsPage() {
 
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
 
 
@@ -504,6 +505,24 @@ export default function SettlementsPage() {
           const pay = load.invoiceAmount * owner.percentage;
           summary.grossPay += pay;
           summary.loads.push(load);
+
+          // Calculate Driver Pay (Expense for Owner)
+          const driver = driverMap.get(load.driverId);
+          if (driver) {
+            const driverPay = calculateDriverPay(load, driver);
+            if (driverPay > 0) {
+              summary.totalDeductions += driverPay;
+              summary.deductions.push({
+                id: `driver-pay-${load.id}`,
+                description: `Driver Pay - Load #${load.loadNumber} (${driver.firstName} ${driver.lastName})`,
+                amount: driverPay,
+                date: load.deliveryDate,
+                type: 'owner',
+                ownerId: owner.id,
+                expenseCategory: 'Driver Pay' // This triggers grouping in UI/PDF
+              } as Expense);
+            }
+          }
         }
       }
     });
@@ -535,7 +554,7 @@ export default function SettlementsPage() {
 
     return Array.from(summaryByOwner.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
 
-  }, [loads, owners, expenses, weekStart, weekEnd]);
+  }, [loads, owners, expenses, weekStart, weekEnd, driverMap]);
 
 
   // --- CSV Export ---
@@ -864,13 +883,59 @@ export default function SettlementsPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setIsImporting(true);
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        if (results.data && firestore && expensesCollectionRef && drivers && owners) {
+        if (results.data && firestore && expensesCollectionRef && drivers && owners && expenses) {
           const importedExpenses = results.data as any[];
           let successCount = 0;
+          let skippedCount = 0;
+          const errors: ImportError[] = [];
+
+          const existingSignatures = new Set<string>();
+
+          // 1. Determine Date Range from Import Data
+          let minDateStr = '';
+          let maxDateStr = '';
+
+          importedExpenses.forEach((row: any) => {
+            if (row['Date']) {
+              const d = normalizeDateFormat(row['Date']);
+              if (!minDateStr || d < minDateStr) minDateStr = d;
+              if (!maxDateStr || d > maxDateStr) maxDateStr = d;
+            }
+          });
+
+          // 2. Fetch Existing Expenses within that Range (if valid)
+          if (minDateStr && maxDateStr && expensesCollectionRef) {
+            try {
+              const q = query(expensesCollectionRef,
+                where('date', '>=', minDateStr),
+                where('date', '<=', maxDateStr)
+              );
+              const snapshot = await getDocs(q);
+              snapshot.forEach(doc => {
+                const e = doc.data() as Expense;
+                // Normalize logic matches the check logic
+                const sig = `${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`;
+                existingSignatures.add(sig);
+              });
+            } catch (err) {
+              console.error("Error checking for duplicates:", err);
+              // Proceeding without check? Or abort? Better to warn but we proceed with empty set (risk of dups) 
+              // or just rely on current 'expenses' if we merge them.
+            }
+          }
+
+          // Merge currently loaded expenses just in case (though query covers it if range overlaps)
+          expenses.forEach(e => {
+            const sig = `${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`;
+            existingSignatures.add(sig);
+          });
+
 
           const parseNumber = (value: any) => {
             if (typeof value === 'number') return value;
@@ -915,6 +980,14 @@ export default function SettlementsPage() {
             const locationState = row['State']?.trim().toUpperCase() || '';
             const expenseCategory = row['Expense Type']?.trim() || 'Fuel'; // Default to Fuel if missing? Or logic based on description?
 
+            // Duplicate Check
+            const signature = `${normalizeDateFormat(row['Date'])}|${(parseNumber(row['Amount']) || 0).toFixed(2)}|${row['Description']?.toLowerCase().trim()}|${unitId}`;
+
+            if (existingSignatures.has(signature)) {
+              skippedCount++;
+              continue;
+            }
+
             const newExpense = {
               date: normalizeDateFormat(row['Date']),
               description: row['Description'],
@@ -930,16 +1003,23 @@ export default function SettlementsPage() {
 
             if (expensesCollectionRef) {
               await addDocumentNonBlocking(expensesCollectionRef, newExpense);
+              existingSignatures.add(signature);
             }
             successCount++;
           }
-          alert(`Imported ${successCount} expenses.`);
+          setImportResult({ successCount, errors, skippedCount });
+          setIsImportResultOpen(true);
+          setIsImporting(false);
+
           if (expenseFileInputRef.current) expenseFileInputRef.current.value = '';
+        } else {
+          setIsImporting(false);
         }
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('Error parsing CSV:', error);
-        alert('Error parsing CSV file.');
+        alert('Error parsing CSV file: ' + (error.message || String(error)));
+        setIsImporting(false);
       }
     });
   };
@@ -1262,7 +1342,7 @@ export default function SettlementsPage() {
                   <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg h-9" title="Download Template">
                     <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleImportExpensesClick} className="rounded-lg h-9" title="Import CSV">
+                  <Button variant="outline" size="sm" onClick={handleImportExpensesClick} disabled={isImporting} className="rounded-lg h-9" title="Import CSV">
                     <Upload className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Import</span>
                   </Button>
                   <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm h-9">
@@ -1628,6 +1708,15 @@ export default function SettlementsPage() {
         drivers={drivers || []}
         owners={owners || []}
       />
+
+      <Dialog open={isImporting} onOpenChange={() => { }}>
+        <DialogContent className="sm:max-w-xs flex flex-col items-center justify-center space-y-4 py-8 focus:outline-none" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogTitle className="sr-only">Importing Expenses</DialogTitle>
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          <p className="text-lg font-medium text-center">Importing Expenses...</p>
+          <p className="text-sm text-muted-foreground text-center">Please wait while we process the file.</p>
+        </DialogContent>
+      </Dialog>
 
       < Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen} >
         <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
