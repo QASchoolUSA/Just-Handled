@@ -4,7 +4,9 @@ import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, isWithinInterval, parseISO, parse } from 'date-fns';
+import { useSettlementCalculations } from '@/hooks/use-settlement-calculations';
+import { SettlementCard } from '@/components/settlement-card';
+import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, parseISO, parse } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,10 +30,10 @@ import { ExpenseForm } from '@/components/expense-form';
 import type { Load, Driver, Expense, AccountSettings, Owner, SettlementSummary, OwnerSettlementSummary } from '@/lib/types';
 // import { generateSettlementPDF } from '@/lib/pdf-export'; // Dynamic import used instead
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
-import { formatCurrency, downloadCsv } from '@/lib/utils';
+import { formatCurrency, downloadCsv, parseNumber, normalizeDateFormat, toTitleCase, calculateDriverPay } from '@/lib/utils';
 import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, doc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, limit, writeBatch } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 
@@ -50,18 +52,9 @@ type ImportResult = {
 };
 
 // --- Helper Functions ---
-const calculateDriverPay = (load: Load, driver?: Driver) => {
-  if (!driver) return 0;
-  if (driver.payType === 'percentage') {
-    return load.invoiceAmount * driver.rate;
-  }
-  return (load.miles || 0) * driver.rate;
-};
 
-const toTitleCase = (str: string) => {
-  if (!str) return '';
-  return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-};
+
+
 
 // Start Date Helper
 const parseDateHelper = (dateStr: string) => {
@@ -387,174 +380,15 @@ export default function SettlementsPage() {
   };
 
   // --- Calculation Engine ---
-  const settlementSummary = useMemo<SettlementSummary[]>(() => {
-    if (!drivers || !loads || !expenses) return [];
-
-    const summaryByDriver: Map<string, SettlementSummary> = new Map();
-    const weekInterval = { start: weekStart, end: weekEnd };
-    const recurringDate = weekEnd.toISOString(); // Use end of week for recurring deductions
-
-    drivers.forEach(driver => {
-      const recurringDeductions = [
-        { id: `ins-${driver.id}`, description: 'Weekly Insurance', amount: driver.recurringDeductions.insurance, type: 'driver' as const, date: recurringDate, driverId: driver.id, isRecurring: true },
-        { id: `esc-${driver.id}`, description: 'Weekly Escrow', amount: driver.recurringDeductions.escrow, type: 'driver' as const, date: recurringDate, driverId: driver.id, isRecurring: true }
-      ].filter(d => d.amount > 0);
-
-      summaryByDriver.set(driver.id, {
-        driverId: driver.id,
-        driverName: toTitleCase(`${driver.firstName} ${driver.lastName}`),
-        unitId: driver.unitId,
-        grossPay: 0,
-        totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
-        totalAdditions: 0,
-        netPay: 0,
-        loads: [],
-        deductions: recurringDeductions,
-        additions: [],
-      });
-    });
-
-    loads.forEach(load => {
-      // Filter load by week
-      // load.deliveryDate can be 'dd-MMM-yy' or 'yyyy-MM-dd'
-      const deliveryDate = parseDateHelper(load.deliveryDate);
-      if (!isWithinInterval(deliveryDate, weekInterval)) return;
-
-      const driver = driverMap.get(load.driverId);
-      const summary = summaryByDriver.get(load.driverId);
-      if (driver && summary) {
-        const loadPay = calculateDriverPay(load, driver);
-        summary.grossPay += loadPay;
-        summary.loads.push(load);
-      }
-    });
-
-    expenses.forEach(expense => {
-      // Filter expense by week
-      // Use new Date() for broader compatibility matching filteredExpenses logic
-      const expenseDate = new Date(expense.date);
-      if (!isWithinInterval(expenseDate, weekInterval)) return;
-
-      if (expense.type === 'driver' && expense.driverId) {
-        const summary = summaryByDriver.get(expense.driverId);
-        if (summary) {
-          if (expense.category === 'addition') {
-            summary.totalAdditions += expense.amount;
-            summary.additions.push(expense);
-          } else {
-            summary.totalDeductions += expense.amount;
-            summary.deductions.push(expense);
-          }
-        }
-      }
-    });
-
-    summaryByDriver.forEach(summary => {
-      summary.netPay = summary.grossPay + summary.totalAdditions - summary.totalDeductions;
-    });
-
-    return Array.from(summaryByDriver.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring) || s.additions.length > 0);
-  }, [loads, expenses, drivers, driverMap, weekStart, weekEnd]);
-
-  // --- Owner Settlement Calculation ---
-  const ownerSettlementSummary = useMemo<OwnerSettlementSummary[]>(() => {
-    if (!owners || !loads) return [];
-
-    const summaryByOwner: Map<string, OwnerSettlementSummary> = new Map();
-    const weekInterval = { start: weekStart, end: weekEnd };
-    const recurringDate = weekEnd.toISOString();
-
-    owners.forEach(owner => {
-      // Calculate weekly recurring deductions
-      const recurringDeductions = [
-        { id: `ins-${owner.id}`, description: 'Weekly Insurance', amount: owner.recurringDeductions.insurance, type: 'company' as const, date: recurringDate, ownerId: owner.id, isRecurring: true }, // Using company type but logic treats as deduction
-        { id: `esc-${owner.id}`, description: 'Weekly Escrow', amount: owner.recurringDeductions.escrow, type: 'company' as const, date: recurringDate, ownerId: owner.id, isRecurring: true },
-        { id: `eld-${owner.id}`, description: 'ELD', amount: owner.recurringDeductions.eld, type: 'company' as const, date: recurringDate, ownerId: owner.id, isRecurring: true },
-        { id: `admin-${owner.id}`, description: 'Admin Fee', amount: owner.recurringDeductions.adminFee, type: 'company' as const, date: recurringDate, ownerId: owner.id, isRecurring: true },
-        { id: `fuel-${owner.id}`, description: 'Fuel/Tolls (Recurring)', amount: (owner.recurringDeductions.fuel || 0) + (owner.recurringDeductions.tolls || 0), type: 'company' as const, date: recurringDate, ownerId: owner.id, isRecurring: true },
-      ].filter(d => d.amount > 0) as any[]; // casting to match structure
-
-      summaryByOwner.set(owner.id, {
-        ownerId: owner.id,
-        ownerName: owner.name,
-        unitId: owner.unitId,
-        grossPay: 0,
-        totalDeductions: recurringDeductions.reduce((sum, d) => sum + d.amount, 0),
-        totalAdditions: 0,
-        netPay: 0,
-        loads: [],
-        deductions: recurringDeductions,
-        additions: [],
-      });
-    });
-
-    loads.forEach(load => {
-      const deliveryDate = parseDateHelper(load.deliveryDate);
-      if (!isWithinInterval(deliveryDate, weekInterval)) return;
-
-      // Find owner by truckId -> unitId
-      if (!load.truckId) return;
-
-      // This search is O(N*M), could be optimized with map but owners list is small
-      const owner = owners.find(o => o.unitId === load.truckId);
-
-      if (owner) {
-        const summary = summaryByOwner.get(owner.id);
-        if (summary) {
-          // Owner Pay = Invoice Amount * Percentage
-          const pay = load.invoiceAmount * owner.percentage;
-          summary.grossPay += pay;
-          summary.loads.push(load);
-
-          // Calculate Driver Pay (Expense for Owner)
-          const driver = driverMap.get(load.driverId);
-          if (driver) {
-            const driverPay = calculateDriverPay(load, driver);
-            if (driverPay > 0) {
-              summary.totalDeductions += driverPay;
-              summary.deductions.push({
-                id: `driver-pay-${load.id}`,
-                description: `Driver Pay - Load #${load.loadNumber} (${driver.firstName} ${driver.lastName})`,
-                amount: driverPay,
-                date: load.deliveryDate,
-                type: 'owner',
-                ownerId: owner.id,
-                expenseCategory: 'Driver Pay' // This triggers grouping in UI/PDF
-              } as Expense);
-            }
-          }
-        }
-      }
-    });
-
-    // Populate deductions/additions from expenses for Owners
-    expenses.forEach(expense => {
-      const expenseDate = new Date(expense.date);
-      if (!isWithinInterval(expenseDate, weekInterval)) return;
-
-
-      if (expense.type === 'owner' && expense.ownerId) {
-        const summary = summaryByOwner.get(expense.ownerId);
-        if (summary) {
-          if (expense.category === 'addition') {
-            summary.totalAdditions += expense.amount;
-            summary.additions.push(expense);
-          } else {
-            // Treat specific owner expenses as deductions from their pay
-            summary.totalDeductions += expense.amount;
-            summary.deductions.push(expense);
-          }
-        }
-      }
-    });
-
-    summaryByOwner.forEach(summary => {
-      summary.netPay = summary.grossPay + summary.totalAdditions - summary.totalDeductions;
-    });
-
-    return Array.from(summaryByOwner.values()).filter(s => s.loads.length > 0 || s.deductions.some(d => !d.isRecurring));
-
-  }, [loads, owners, expenses, weekStart, weekEnd, driverMap]);
+  const { settlementSummary, ownerSettlementSummary } = useSettlementCalculations(
+    drivers || [],
+    loads || [],
+    expenses || [],
+    owners || [],
+    weekStart,
+    weekEnd,
+    driverMap
+  );
 
 
   // --- CSV Export ---
@@ -795,14 +629,8 @@ export default function SettlementsPage() {
             }
 
             // Helper to parse numbers that might have currency symbols, commas, etc.
-            const parseNumber = (value: string | number): number => {
-              if (typeof value === 'number') return value;
-              if (!value) return 0;
-              // Remove currency symbols, commas, whitespace
-              const cleaned = String(value).replace(/[$,\s]/g, '').trim();
-              const parsed = parseFloat(cleaned);
-              return isNaN(parsed) ? 0 : parsed;
-            };
+            // Helper to parse numbers that might have currency symbols, commas, etc.
+            // Uses shared parseNumber from utils
 
             const newLoad = {
               loadNumber: row['Load #'],
@@ -937,13 +765,11 @@ export default function SettlementsPage() {
           });
 
 
-          const parseNumber = (value: any) => {
-            if (typeof value === 'number') return value;
-            if (!value) return 0;
-            const cleaned = String(value).replace(/[$,\s]/g, '').trim();
-            const parsed = parseFloat(cleaned);
-            return isNaN(parsed) ? 0 : parsed;
-          };
+
+
+          // Batch variables
+          let batch = writeBatch(firestore);
+          let batchCount = 0;
 
           for (const row of importedExpenses) {
             if (!row['Description'] || !row['Amount']) continue;
@@ -1002,11 +828,30 @@ export default function SettlementsPage() {
             };
 
             if (expensesCollectionRef) {
-              await addDocumentNonBlocking(expensesCollectionRef, newExpense);
+              // BATCH LOGIC
+              if (batchCount === 0) {
+                batch = writeBatch(firestore);
+              }
+
+              const newDocRef = doc(expensesCollectionRef); // Auto-ID
+              batch.set(newDocRef, newExpense);
               existingSignatures.add(signature);
+
+              batchCount++;
+              successCount++;
+
+              if (batchCount >= 500) {
+                await batch.commit();
+                batchCount = 0;
+              }
             }
-            successCount++;
           }
+
+          // Commit any remaining writes
+          if (batchCount > 0 && batch) {
+            await batch.commit();
+          }
+
           setImportResult({ successCount, errors, skippedCount });
           setIsImportResultOpen(true);
           setIsImporting(false);
@@ -1464,82 +1309,13 @@ export default function SettlementsPage() {
               </div>
 
               {settlementSummary.map(summary => (
-                <Card key={summary.driverId} className="rounded-xl border-border/50 shadow-sm overflow-hidden">
-                  <CardHeader className="bg-muted/30 border-b border-border/40 flex flex-row items-center justify-between">
-                    <div>
-                      <CardTitle className="font-display">{summary.driverName}</CardTitle>
-                      <CardDescription>Driver Settlement</CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => handleExportPDF(summary, weekStart, weekEnd)}>
-                      <FileDown className="mr-2 h-4 w-4" /> Export PDF
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center mb-8 pb-8 border-b border-border/40">
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Gross Pay</p>
-                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
-                      </div>
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Additions</p>
-                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalAdditions)}</p>
-                      </div>
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Deductions</p>
-                        <p className="text-3xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
-                      </div>
-                      <div className="p-4 bg-primary/5 rounded-xl border border-primary/10">
-                        <p className="text-sm font-medium text-foreground mb-1">Net Pay</p>
-                        <p className="text-3xl font-bold text-primary">{formatCurrency(summary.netPay)}</p>
-                      </div>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-8">
-                      <div>
-                        <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
-                        <div className="rounded-lg border overflow-hidden mb-6">
-                          <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
-                            <TableBody>
-                              {summary.loads.map(l => (
-                                <TableRow key={l.id} className="hover:bg-muted/20">
-                                  <TableCell>{l.loadNumber}</TableCell>
-                                  <TableCell className="text-xs">{l.pickupLocation}</TableCell>
-                                  <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
-                                  <TableCell className="text-right font-medium">{formatCurrency(calculateDriverPay(l, driverMap.get(l.driverId)))}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-
-                        {summary.additions.length > 0 && (
-                          <>
-                            <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Additions</h4>
-                            <div className="rounded-lg border overflow-hidden">
-                              <Table>
-                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
-                                <TableBody>
-                                  {summary.additions.map((a, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>)}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Deductions</h4>
-                        <div className="rounded-lg border overflow-hidden">
-                          <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
-                            <TableBody>
-                              {summary.deductions.map((d, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>)}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <SettlementCard
+                  key={summary.driverId}
+                  summary={summary}
+                  type="driver"
+                  onExportPDF={() => handleExportPDF(summary, weekStart, weekEnd)}
+                  driverMap={driverMap}
+                />
               ))}
               {settlementSummary.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-border/50 rounded-xl bg-muted/10">
@@ -1579,107 +1355,13 @@ export default function SettlementsPage() {
               </div>
 
               {ownerSettlementSummary.map(summary => (
-                <Card key={summary.ownerId} className="rounded-xl border-border/50 shadow-sm overflow-hidden">
-                  <CardHeader className="bg-muted/30 border-b border-border/40 flex flex-row items-center justify-between">
-                    <div>
-                      <CardTitle className="font-display">{summary.ownerName}</CardTitle>
-                      <CardDescription>Owner/Company Settlement</CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => handleExportPDF(summary, weekStart, weekEnd)}>
-                      <FileDown className="mr-2 h-4 w-4" /> Export PDF
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center mb-8 pb-8 border-b border-border/40">
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Gross Pay</p>
-                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.grossPay)}</p>
-                      </div>
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Additions</p>
-                        <p className="text-3xl font-bold text-green-600">{formatCurrency(summary.totalAdditions)}</p>
-                      </div>
-                      <div className="p-4 bg-muted/20 rounded-xl">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Total Deductions</p>
-                        <p className="text-3xl font-bold text-red-600">{formatCurrency(summary.totalDeductions)}</p>
-                      </div>
-                      <div className="p-4 bg-primary/5 rounded-xl border border-primary/10">
-                        <p className="text-sm font-medium text-foreground mb-1">Net Pay</p>
-                        <p className="text-3xl font-bold text-primary">{formatCurrency(summary.netPay)}</p>
-                      </div>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-8">
-                      <div>
-                        <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
-                        <div className="rounded-lg border overflow-hidden">
-                          <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
-                            <TableBody>
-                              {summary.loads.map(l => {
-                                // Re-find owner for percent calc if needed, or just rely on what we put in summary?
-                                // Actually summary doesn't store the PER LOAD pay, just total.
-                                // Let's approximate or just show invoice amount?
-                                // The user asked for specific columns: Load #, Pick Up, Drop Off, Additions, Deductions, Net Pay, Gross Pay
-                                // "Gross Pay" for an owner on a load is InvoiceAmount * Percentage.
-                                const owner = owners?.find(o => o.id === summary.ownerId);
-                                const pay = owner ? l.invoiceAmount * owner.percentage : 0;
-                                return (
-                                  <TableRow key={l.id} className="hover:bg-muted/20">
-                                    <TableCell>{l.loadNumber}</TableCell>
-                                    <TableCell className="text-xs">{l.pickupLocation}</TableCell>
-                                    <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
-                                    <TableCell className="text-right font-medium">{formatCurrency(pay)}</TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
-
-                        {summary.additions.length > 0 && (
-                          <>
-                            <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Additions</h4>
-                            <div className="rounded-lg border overflow-hidden">
-                              <Table>
-                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
-                                <TableBody>
-                                  {Object.values(summary.additions.reduce((acc, a) => {
-                                    // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
-                                    const key = a.expenseCategory || (a.gallons ? 'Fuel' : a.description) || 'Other';
-                                    if (!acc[key]) acc[key] = { description: key, amount: 0 };
-                                    acc[key].amount += a.amount;
-                                    return acc;
-                                  }, {} as Record<string, { description: string; amount: number; }>)).map((a, i) => (
-                                    <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Deductions</h4>
-                        <div className="rounded-lg border overflow-hidden">
-                          <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
-                            <TableBody>
-                              {Object.values(summary.deductions.reduce((acc, d) => {
-                                // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
-                                const key = d.expenseCategory || (d.gallons ? 'Fuel' : d.description) || 'Other';
-                                if (!acc[key]) acc[key] = { description: key, amount: 0 };
-                                acc[key].amount += d.amount;
-                                return acc;
-                              }, {} as Record<string, { description: string; amount: number; }>)).map((d, i) => (
-                                <TableRow key={i} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <SettlementCard
+                  key={summary.ownerId}
+                  summary={summary}
+                  type="owner"
+                  onExportPDF={() => handleExportPDF(summary, weekStart, weekEnd)}
+                  owners={owners || []}
+                />
               ))}
               {ownerSettlementSummary.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-border/50 rounded-xl bg-muted/10">

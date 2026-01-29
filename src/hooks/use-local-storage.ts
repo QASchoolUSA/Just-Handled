@@ -21,7 +21,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 
   useEffect(() => {
     setStoredValue(readValue());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setValue = (value: T | ((val: T) => T)) => {
@@ -43,16 +43,16 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent | CustomEvent) => {
-       if ((e as StorageEvent)?.key && (e as StorageEvent).key !== key) {
+      if ((e as StorageEvent)?.key && (e as StorageEvent).key !== key) {
         return;
       }
       setStoredValue(readValue());
     };
     window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('local-storage', handleStorageChange);
+    window.addEventListener('local-storage' as any, handleStorageChange as EventListener);
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('local-storage', handleStorageChange);
+      window.removeEventListener('local-storage' as any, handleStorageChange as EventListener);
     };
   }, [key, readValue]);
 
