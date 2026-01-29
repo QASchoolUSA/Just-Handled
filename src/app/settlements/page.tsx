@@ -541,24 +541,24 @@ export default function SettlementsPage() {
   // --- CSV Export ---
   const handleExportInvoices = () => {
     if (!loads) return;
-    const today = new Date().toISOString().split('T')[0];
+    const periodEndStr = format(weekEnd, 'yyyy-MM-dd');
     const invoiceData = loads.map(load => ({
       InvoiceNo: load.loadNumber,
       Customer: accounts.factoringCompany,
-      'Invoice Date': today,
-      'Due Date': today,
+      'Invoice Date': periodEndStr,
+      'Due Date': periodEndStr,
       'Item(Description)': 'Freight',
       'Item(Amount)': load.invoiceAmount,
       'Class': 'Revenue'
     }));
 
     const csv = Papa.unparse(invoiceData);
-    downloadCsv(csv, `QBO_Invoices_${today}.csv`);
+    downloadCsv(csv, `QBO_Invoices_${periodEndStr}.csv`);
   };
 
   const handleExportJournal = () => {
     if (!loads) return;
-    const today = new Date().toISOString().split('T')[0];
+    const periodEndStr = format(weekEnd, 'yyyy-MM-dd');
     const journalEntries: any[] = [];
     let journalNo = 1;
 
@@ -568,16 +568,16 @@ export default function SettlementsPage() {
     const totalRevenue = loads.reduce((sum, l) => sum + l.invoiceAmount, 0);
     const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
 
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringFees), Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.factoringFees, Debits: fmt(totalFactoringFees), Credits: '', Name: '', Description: 'Weekly factoring fees' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: 'Accounts Receivable', Debits: '', Credits: fmt(totalRevenue), Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringFees), Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringFees), Credits: '', Name: '', Description: 'Weekly factoring fees' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Receivable', Debits: '', Credits: fmt(totalRevenue), Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
     journalNo++;
 
     // 2. Driver Pay & Deductions Entries
     settlementSummary.forEach(summary => {
       if (summary.grossPay > 0) {
-        journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.driverPayExpense, Debits: fmt(summary.grossPay), Credits: '', Name: summary.driverName, Description: `Gross pay for ${summary.driverName}` });
-        journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.accruedDriverPay, Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
+        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.driverPayExpense, Debits: fmt(summary.grossPay), Credits: '', Name: summary.driverName, Description: `Gross pay for ${summary.driverName}` });
+        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
         journalNo++;
       }
 
@@ -595,8 +595,8 @@ export default function SettlementsPage() {
         }
 
         if (creditAccount) { // Only create entry if we have a defined credit account
-          journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: accounts.accruedDriverPay, Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
-          journalEntries.push({ JournalNo: journalNo, 'Journal Date': today, Account: creditAccount, Debits: '', Credits: fmt(deduction.amount), Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
+          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
+          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: creditAccount, Debits: '', Credits: fmt(deduction.amount), Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
           journalNo++;
         }
       });
@@ -604,7 +604,7 @@ export default function SettlementsPage() {
 
 
     const csv = Papa.unparse(journalEntries);
-    downloadCsv(csv, `QBO_Journal_${today}.csv`);
+    downloadCsv(csv, `QBO_Journal_${periodEndStr}.csv`);
   };
 
 
