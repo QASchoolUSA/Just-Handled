@@ -78,6 +78,12 @@ const parseDateHelper = (dateStr: string) => {
     return parsed;
   }
 
+  // Try native date parsing (covers MM/DD/YY, etc.)
+  const native = new Date(dateStr);
+  if (!isNaN(native.getTime())) {
+    return native;
+  }
+
   // Fallback
   return new Date();
 };
@@ -256,15 +262,51 @@ export default function SettlementsPage() {
 
     // Helper to parse dd-MMM-yy to ISO (Robust)
     const parseLegacyDate = (dateStr: string) => {
-      const formats = ['dd-MMM-yy', 'd-MMM-yy', 'yyyy-MM-dd', 'dd/MM/yyyy'];
+      const cleaned = dateStr.trim();
+
+      // 1. Manual Regex for US Short Date (M/d/yy) or (M/d/yyyy) which matches "1/15/25"
+      // This is the most reliable way to handle the user's specific format without timezone/locale ambiguity
+      const usDateMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+      if (usDateMatch) {
+        const month = parseInt(usDateMatch[1], 10);
+        const day = parseInt(usDateMatch[2], 10);
+        let year = parseInt(usDateMatch[3], 10);
+
+        if (year < 100) year += 2000; // Assume 20xx for 2 digits
+
+        // Return ISO YYYY-MM-DD
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+
+      const formats = [
+        'dd-MMM-yy', 'd-MMM-yy', 'yyyy-MM-dd', 'dd/MM/yyyy',
+        'M/d/yy', 'MM/dd/yy', 'M/d/yyyy', 'MM/dd/yyyy',
+        'MM-dd-yyyy', 'M-d-yyyy', 'yyyy/MM/dd'
+      ];
       for (const fmt of formats) {
         try {
-          const parsed = parse(dateStr, fmt, new Date());
+          // date-fns parse implies strict format matching usually
+          const parsed = parse(cleaned, fmt, new Date());
           if (!isNaN(parsed.getTime())) {
             return format(parsed, 'yyyy-MM-dd');
           }
         } catch (e) { /* continue */ }
       }
+
+      // Fallback: Native Date (very permissive)
+      try {
+        const native = new Date(cleaned);
+        if (!isNaN(native.getTime())) {
+          // Fix 2-digit years that might be interpreted as 19xx
+          if (native.getFullYear() < 2000) {
+            native.setFullYear(native.getFullYear() + 100);
+          }
+          if (native.getFullYear() > 2000) {
+            return format(native, 'yyyy-MM-dd');
+          }
+        }
+      } catch (e) { /* continue */ }
+
       return null;
     };
     const isIsoDate = (dateStr: string) => /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
@@ -272,8 +314,9 @@ export default function SettlementsPage() {
     if (!confirm('This will verify all records in the database and convert legacy dates to ISO format. Continue?')) return;
 
     let updatedCount = 0;
-    const loadsSnapshot = await getDocs(loadsCollectionRef);
 
+    // 1. Migrate Loads
+    const loadsSnapshot = await getDocs(loadsCollectionRef);
     for (const docSnap of loadsSnapshot.docs) {
       const load = docSnap.data() as Load;
       let updates: any = {};
@@ -293,11 +336,40 @@ export default function SettlementsPage() {
       }
     }
 
+    // 2. Migrate Expenses
+    if (expensesCollectionRef) {
+      const expensesSnapshot = await getDocs(expensesCollectionRef);
+      console.log(`Scanning ${expensesSnapshot.size} expenses for legacy dates...`); // Debug log
+      let expenseFound = 0;
+      let expenseFixed = 0;
+
+      for (const docSnap of expensesSnapshot.docs) {
+        const expense = docSnap.data() as Expense;
+        let updates: any = {};
+
+        if (expense.date && !isIsoDate(expense.date)) {
+          expenseFound++;
+          const iso = parseLegacyDate(expense.date);
+          if (iso) {
+            updates.date = iso;
+            expenseFixed++;
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await setDocumentNonBlocking(doc(firestore, 'expenses', docSnap.id), updates, { merge: true });
+          updatedCount++;
+        }
+      }
+
+      alert(`Migration Status:\n\nScanned Expenses: ${expensesSnapshot.size}\nFound Legacy Dates: ${expenseFound}\nFixed Dates: ${expenseFixed}\n\nTotal Updates: ${updatedCount}`);
+    }
+
 
     if (updatedCount === 0) {
       alert("Migration ran but updated 0 records. The date format might not match known patterns.");
     } else {
-      alert(`Migration Complete. Updated ${updatedCount} loads. The page will reload.`);
+      alert(`Migration Complete. Updated ${updatedCount} records. The page will reload.`);
       window.location.reload();
     }
   };
@@ -660,11 +732,23 @@ export default function SettlementsPage() {
     loadFileInputRef.current?.click();
   };
 
-  // Flexible date parser that handles multiple formats and converts to dd-MMM-yy
+  // Flexible date parser that handles multiple formats and converts to ISO
   const normalizeDateFormat = (dateString: string): string => {
-    if (!dateString) return format(new Date(), 'dd-MMM-yy');
+    if (!dateString) return format(new Date(), 'yyyy-MM-dd');
 
     const trimmed = dateString.trim();
+
+    // 1. Manual Regex for US Short Date which matches "1/15/25"
+    const usDateMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (usDateMatch) {
+      const month = parseInt(usDateMatch[1], 10);
+      const day = parseInt(usDateMatch[2], 10);
+      let year = parseInt(usDateMatch[3], 10);
+
+      if (year < 100) year += 2000;
+
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
 
     // Try multiple common date formats
     const formats = [
@@ -684,8 +768,8 @@ export default function SettlementsPage() {
         const parsed = parse(trimmed, formatStr, new Date());
         // Check if parse was successful (valid date)
         if (!isNaN(parsed.getTime())) {
-          // Convert to our standard format: dd-MMM-yy
-          return format(parsed, 'dd-MMM-yy');
+          // Convert to our standard format: ISO
+          return format(parsed, 'yyyy-MM-dd');
         }
       } catch {
         // Try next format
@@ -705,7 +789,7 @@ export default function SettlementsPage() {
 
     // If everything fails, return current date
     console.warn(`Could not parse date: "${dateString}", using current date`);
-    return format(new Date(), 'dd-MMM-yy');
+    return format(new Date(), 'yyyy-MM-dd');
   };
 
   const handleImportLoads = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -897,7 +981,7 @@ export default function SettlementsPage() {
             const locationState = row['State']?.trim().toUpperCase() || '';
 
             const newExpense = {
-              date: row['Date'] || new Date().toISOString(),
+              date: normalizeDateFormat(row['Date']),
               description: row['Description'],
               amount: parseNumber(row['Amount']) || 0,
               type,
@@ -1003,6 +1087,9 @@ export default function SettlementsPage() {
           </Button>
           <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
             <FileDown className="mr-2 h-4 w-4" /> Export Journal
+          </Button>
+          <Button onClick={handleMigrateData} variant="outline" className="rounded-xl text-yellow-600 border-yellow-200 bg-yellow-50 hover:bg-yellow-100">
+            Fix Dates
           </Button>
           {activeTab === 'summary' && (
             <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
