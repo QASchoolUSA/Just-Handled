@@ -81,6 +81,7 @@ export type Expense = {
   unitId?: string;
   date: string;
   category?: 'addition' | 'deduction';
+  expenseCategory?: string; // e.g. Fuel, Insurance, ELD, etc.
   gallons?: number;
   locationState?: string;
 };

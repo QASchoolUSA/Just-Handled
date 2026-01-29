@@ -841,9 +841,9 @@ export default function SettlementsPage() {
 
   const handleGenerateExpenseTemplate = () => {
     const csvData = [
-      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State', 'Bill To (D/O/C)'],
-      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY', 'D'],
-      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA', 'C'],
+      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State', 'Bill To (D/O/C)', 'Expense Type'],
+      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY', 'D', 'Repair'],
+      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA', 'C', 'Fuel'],
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -913,6 +913,7 @@ export default function SettlementsPage() {
 
             const gallons = parseFloat(row['Gallons']) || 0;
             const locationState = row['State']?.trim().toUpperCase() || '';
+            const expenseCategory = row['Expense Type']?.trim() || 'Fuel'; // Default to Fuel if missing? Or logic based on description?
 
             const newExpense = {
               date: normalizeDateFormat(row['Date']),
@@ -924,6 +925,7 @@ export default function SettlementsPage() {
               unitId,
               gallons,
               locationState,
+              expenseCategory,
             };
 
             if (expensesCollectionRef) {
@@ -1277,7 +1279,8 @@ export default function SettlementsPage() {
                     <TableRow className="hover:bg-transparent bg-muted/10">
                       <TableHead className="pl-6">Date</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>Expense Type</TableHead>
+                      <TableHead>Bill To</TableHead>
                       <TableHead>Driver</TableHead>
                       <TableHead>Unit ID</TableHead>
                       <TableHead>Gallons</TableHead>
@@ -1294,6 +1297,7 @@ export default function SettlementsPage() {
                         <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
                           <TableCell className="pl-6">{new Date(expense.date).toLocaleDateString()}</TableCell>
                           <TableCell className="font-medium">{expense.description}</TableCell>
+                          <TableCell><Badge variant="outline" className="rounded-md capitalize">{expense.expenseCategory || 'Fuel'}</Badge></TableCell>
                           <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'} className="rounded-md capitalize">{expense.type}</Badge></TableCell>
                           <TableCell>
                             {(() => {
@@ -1559,7 +1563,15 @@ export default function SettlementsPage() {
                               <Table>
                                 <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
                                 <TableBody>
-                                  {summary.additions.map((a, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>)}
+                                  {Object.values(summary.additions.reduce((acc, a) => {
+                                    // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
+                                    const key = a.expenseCategory || (a.gallons ? 'Fuel' : a.description) || 'Other';
+                                    if (!acc[key]) acc[key] = { description: key, amount: 0 };
+                                    acc[key].amount += a.amount;
+                                    return acc;
+                                  }, {} as Record<string, { description: string; amount: number; }>)).map((a, i) => (
+                                    <TableRow key={i} className="hover:bg-muted/20"><TableCell>{a.description}</TableCell><TableCell className="text-right">{formatCurrency(a.amount)}</TableCell></TableRow>
+                                  ))}
                                 </TableBody>
                               </Table>
                             </div>
@@ -1572,7 +1584,15 @@ export default function SettlementsPage() {
                           <Table>
                             <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
                             <TableBody>
-                              {summary.deductions.map((d, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>)}
+                              {Object.values(summary.deductions.reduce((acc, d) => {
+                                // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
+                                const key = d.expenseCategory || (d.gallons ? 'Fuel' : d.description) || 'Other';
+                                if (!acc[key]) acc[key] = { description: key, amount: 0 };
+                                acc[key].amount += d.amount;
+                                return acc;
+                              }, {} as Record<string, { description: string; amount: number; }>)).map((d, i) => (
+                                <TableRow key={i} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>
+                              ))}
                             </TableBody>
                           </Table>
                         </div>

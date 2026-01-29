@@ -43,6 +43,7 @@ const formSchema = z.object({
   amount: z.coerce.number().min(0.01, { message: 'Amount must be positive.' }),
   gallons: z.coerce.number().optional(),
   unitId: z.string().min(1, { message: 'Unit ID is required.' }),
+  expenseCategory: z.string().optional(),
   locationState: z.string().max(2, { message: 'State must be 2 characters.' }).optional(),
   category: z.enum(['addition', 'deduction']).optional(),
   type: z.enum(['driver', 'owner', 'company']),
@@ -68,6 +69,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
       amount: 0,
       gallons: 0,
       unitId: '',
+      expenseCategory: 'Fuel',
       locationState: '',
       category: 'deduction',
       type: 'company',
@@ -104,6 +106,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
           gallons: expense.gallons || 0,
           unitId: expense.unitId || '',
           locationState: expense.locationState || '',
+          expenseCategory: expense.expenseCategory || 'Fuel',
           category: expense.category || 'deduction',
           type: expense.type,
         });
@@ -115,6 +118,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
           gallons: 0,
           unitId: '',
           locationState: '',
+          expenseCategory: 'Fuel',
           category: 'deduction',
           type: 'company',
         });
@@ -145,6 +149,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
       gallons: values.gallons,
       unitId: values.unitId,
       locationState: values.locationState?.toUpperCase(),
+      expenseCategory: values.expenseCategory,
       type: values.type,
       driverId: values.type === 'driver' && driver ? driver.id : undefined,
       ownerId: values.type === 'owner' && owner ? owner.id : undefined,
@@ -288,6 +293,38 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
               />
             </div>
 
+
+
+            <FormField
+              control={form.control}
+              name="expenseCategory"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Expense Type</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Fuel">Fuel</SelectItem>
+                      <SelectItem value="Tolls">Tolls</SelectItem>
+                      <SelectItem value="ELD">ELD</SelectItem>
+                      <SelectItem value="Insurance">Insurance</SelectItem>
+                      <SelectItem value="Admin Fee">Admin Fee</SelectItem>
+                      <SelectItem value="Repair">Repair</SelectItem>
+                      <SelectItem value="Lease">Lease</SelectItem>
+                      <SelectItem value="Maintenance">Maintenance</SelectItem>
+                      <SelectItem value="Advance">Advance</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="type"
@@ -361,7 +398,7 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
             </DialogFooter>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </DialogContent >
+    </Dialog >
   );
 }
