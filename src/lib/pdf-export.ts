@@ -75,11 +75,19 @@ const createSettlementDoc = (settlement: SettlementSummary | OwnerSettlementSumm
     if (settlement.deductions.length > 0) {
         doc.text('Deductions', 14, currentY);
 
+        // Group Deductions
+        const groupedDeductions = Object.values(settlement.deductions.reduce((acc, d) => {
+            // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
+            const key = d.expenseCategory || (d.gallons ? 'Fuel' : d.description) || 'Other';
+            if (!acc[key]) acc[key] = { description: key, amount: 0, date: d.date }; // Keep one date or use latest? UI doesn't show date for grouped.
+            acc[key].amount += d.amount;
+            return acc;
+        }, {} as Record<string, { description: string; amount: number; date: string }>));
+
         autoTable(doc, {
             startY: currentY + 5,
-            head: [['Date', 'Description', 'Amount']],
-            body: settlement.deductions.map(d => [
-                format(new Date(d.date), 'MM/dd/yyyy'),
+            head: [['Description', 'Amount']], // Removed Date column as it's aggregated
+            body: groupedDeductions.map(d => [
                 d.description,
                 formatCurrency(d.amount)
             ]),
@@ -130,6 +138,15 @@ const createSettlementDoc = (settlement: SettlementSummary | OwnerSettlementSumm
     // Format: Type - Unit ID - Name - Dates
     // Example: Driver - 1001 - John_Doe - 2025-04-14_to_2025-04-20
     const fileName = `${typePrefix} - ${unitId} - ${cleanName} - ${startStr}_to_${endStr}.pdf`;
+
+    // --- Footer (Watermark) ---
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(10);
+        doc.setTextColor(150, 150, 150); // Gray color
+        doc.text('Just Handled', pageWidth / 2, doc.internal.pageSize.height - 10, { align: 'center' });
+    }
 
     return { doc, fileName };
 };
