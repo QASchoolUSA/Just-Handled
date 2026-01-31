@@ -243,7 +243,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-600 to-indigo-600 w-fit">
-            Health Check Dashboard
+            Fleet Performance Overview
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl">
             Weekly snapshot of your company's financial health and verification status.
