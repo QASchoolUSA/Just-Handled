@@ -8,62 +8,67 @@ body {
 
 @layer base {
   :root {
-    /* Base: Slate 50 */
-    --background: 210 40% 98%; 
-    /* Foreground: Slate 900 */
-    --foreground: 222 47% 11%;
+    /* Base: Cream (#FDFBF7) */
+    --background: 40 60% 98%;
+    /* Foreground: Dark Brown (#291D12) */
+    --foreground: 29 39% 12%;
 
     /* Card: White */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 29 39% 12%;
 
     /* Popover: White */
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 29 39% 12%;
 
-    /* Primary: Indigo 600 */
-    --primary: 243 75% 59%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary: Gold (#D9AA34) */
+    --primary: 43 68% 53%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Secondary: Slate 100 */
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222 47% 11%;
+    /* Secondary: Surface/Muted (#F8F6F2) */
+    --secondary: 40 30% 96%;
+    --secondary-foreground: 33 55% 18%;
 
-    /* Muted: Slate 100 */
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215 16% 47%;
+    /* Muted: Surface (#F8F6F2) */
+    --muted: 40 30% 96%;
+    --muted-foreground: 33 55% 18%;
 
-    /* Accent: Indigo 50 (Very light indigo for hover) */
-    --accent: 240 60% 98%; 
-    --accent-foreground: 243 75% 59%;
+    /* Accent: Border/Accent color (#EADDCF) */
+    --accent: 31 39% 86%;
+    --accent-foreground: 29 39% 12%;
 
     /* Destructive: Red 500 */
     --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
-    /* Border: Slate 200 */
-    --border: 214.3 32% 91%;
-    --input: 214.3 32% 91%;
-    --ring: 243 75% 59%;
+    /* Border: (#EADDCF) */
+    --border: 31 39% 86%;
+    --input: 31 39% 86%;
+    --ring: 43 68% 53%;
 
     /* Charts */
-    --chart-1: 243 75% 59%; /* Indigo */
-    --chart-2: 173 58% 39%; /* Teal */
-    --chart-3: 197 37% 24%; /* Navy */
-    --chart-4: 43 74% 66%; /* Amber */
-    --chart-5: 27 87% 67%; /* Orange */
+    --chart-1: 43 68% 53%;
+    /* Gold */
+    --chart-2: 173 58% 39%;
+    /* Teal (kept) */
+    --chart-3: 197 37% 24%;
+    /* Navy (kept) */
+    --chart-4: 43 74% 66%;
+    /* Amber (kept) */
+    --chart-5: 27 87% 67%;
+    /* Orange (kept) */
 
     --radius: 0.75rem;
 
     /* Sidebar - Light Mode */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 5% 26%;
-    --sidebar-primary: 243 75% 59%;
+    --sidebar-primary: 43 68% 53%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 243 75% 59%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 243 75% 59%;
+    --sidebar-accent: 40 30% 96%;
+    --sidebar-accent-foreground: 43 68% 53%;
+    --sidebar-border: 31 39% 86%;
+    --sidebar-ring: 43 68% 53%;
   }
 
   .dark {
@@ -73,15 +78,15 @@ body {
     --foreground: 210 40% 98%;
 
     /* Card: Slate 900 */
-    --card: 222 47% 13%; 
+    --card: 222 47% 13%;
     --card-foreground: 210 40% 98%;
 
     /* Popover: Slate 900 */
     --popover: 222 47% 13%;
     --popover-foreground: 210 40% 98%;
 
-    /* Primary: Indigo 500 */
-    --primary: 243 75% 65%; 
+    /* Primary: Gold (Lighter/Brighter for Dark Mode) */
+    --primary: 43 90% 65%;
     --primary-foreground: 222 47% 11%;
 
     /* Secondary: Slate 800 */
@@ -103,10 +108,10 @@ body {
     /* Border: Slate 800 */
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 243 75% 65%;
+    --ring: 43 90% 65%;
 
     /* Charts */
-    --chart-1: 243 75% 65%;
+    --chart-1: 43 90% 65%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
@@ -115,18 +120,20 @@ body {
     /* Sidebar - Dark Mode (Slate 900) */
     --sidebar-background: 222 47% 13%;
     --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 243 75% 59%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 43 90% 65%;
+    --sidebar-primary-foreground: 222 47% 11%;
     --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 43 90% 65%;
     --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 243 75% 59%;
+    --sidebar-ring: 43 90% 65%;
   }
+
   .maplibregl-popup-content {
-    @apply bg-transparent! shadow-none! p-0! rounded-none!;
+    @apply bg-transparent ! shadow-none ! p-0 ! rounded-none !;
   }
+
   .maplibregl-popup-tip {
-    @apply hidden!;
+    @apply hidden !;
   }
 }
 
@@ -134,6 +141,7 @@ body {
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
