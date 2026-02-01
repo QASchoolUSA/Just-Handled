@@ -46,3 +46,9 @@ firestore-debug.log
 
 # SA JSON
 service-account-key.json
+
+# functions
+functions/node_modules
+functions/lib
+functions/firebase-debug.log
+functions/firebase-debug.*.log

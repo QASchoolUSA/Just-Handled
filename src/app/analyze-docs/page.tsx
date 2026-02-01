@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useFunctions } from "@/firebase/provider";
+import { httpsCallable } from "firebase/functions";
 
 
 interface LineItem {
@@ -143,6 +145,9 @@ export default function AnalyzeDocsPage() {
     const [results, setResults] = useState<AnalysisResult[]>([]);
     const [loading, setLoading] = useState(false);
 
+    // Get functions instance
+    const functions = useFunctions();
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             setFiles(e.target.files);
@@ -156,31 +161,31 @@ export default function AnalyzeDocsPage() {
         setLoading(true);
         const newResults: AnalysisResult[] = [];
 
+        // Prepare the callable function
+        const analyzeDocs = httpsCallable(functions, 'analyzeDocs');
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const formData = new FormData();
-            formData.append("file", file);
 
             try {
-                const res = await fetch("/api/analyze-docs", {
-                    method: "POST",
-                    body: formData,
-                });
+                // Convert to base64
+                const arrayBuffer = await file.arrayBuffer();
+                const base64String = Buffer.from(arrayBuffer).toString('base64');
 
-                if (!res.ok) {
-                    throw new Error(`Failed to analyze ${file.name}`);
-                }
+                // Call Cloud Function
+                const result = await analyzeDocs({ base64Image: base64String });
+                const data = result.data as any;
 
-                const data = await res.json();
                 newResults.push({
                     file: file.name,
                     receipts: data.receipts || [],
                 });
             } catch (err: any) {
+                console.error("Analysis Error", err);
                 newResults.push({
                     file: file.name,
                     receipts: [],
-                    error: err.message,
+                    error: err.message || "Unknown error",
                 });
             }
         }
