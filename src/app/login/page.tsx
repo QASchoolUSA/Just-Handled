@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useAuth, useUser } from '@/firebase/provider';
 import { Button } from '@/components/ui/button';
@@ -105,8 +106,13 @@ export default function LoginPage() {
                         </Button>
                     </form>
                 </CardContent>
-                <CardFooter className="flex justify-center text-sm text-muted-foreground">
-                    Just Handled
+                <CardFooter className="flex justify-center text-sm text-muted-foreground flex-col gap-2">
+                    <div>
+                        Don't have an account?{' '}
+                        <Link href="/register" className="text-primary hover:underline font-medium">
+                            Sign up
+                        </Link>
+                    </div>
                 </CardFooter>
             </Card>
         </div>
