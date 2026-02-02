@@ -23,6 +23,7 @@ Output ONLY valid JSON as an array of receipts for reimbursements and IRS compli
     "transaction_time": "HH:MM if available",
     "vendor_name": "Business/store/scale name (e.g., Love's, CAT Scale)",
     "vendor_location": "City, state, or full address (e.g., Auburndale, FL)",
+    "unit_id": "Extract the Unit/Truck ID. Look for 'TRK #', 'Tractor #', 'Unit #', 'Truck #', or 'VIN' last 4 digits. Example values: '1001', '5544'.",
     "payment_method": "Cash, Card (last 4 digits if shown), Fuel Card, etc.",
     "subtotal": "Number only, e.g., 125.50",
     "tax": "Number only, e.g., 8.25",
@@ -46,10 +47,15 @@ Output ONLY valid JSON as an array of receipts for reimbursements and IRS compli
   }
 ]
 
+Examples:
+Input Text: "Love's Travel Stop ... TRK # 2319 ... Total $50.00"
+Output JSON: { "vendor_name": "Love's", "total_amount": "50.00", "unit_id": "2319", ... }
+
 Rules:
-- Scan entire image for multiple docs; output one object per distinct receipt/scale ticket.
+- Scan entire image CAREFULLY. If there are multiple distinct receipts (e.g., side-by-side, overlapping), extract EACH one as a separate object in the array. Do NOT merge them.
 - CAT scales: Prioritize weights (gross, steer/drive/trailer axle), scale ID/location; categorize as "scale".
 - Fuel receipts (Love's, Pilot): Extract gallons, $/gal, odometer if shown.
+- Unit ID: EXTREMELY IMPORTANT. If you extract text key/values like "TRK #: 1234" or see "Unit 5566" anywhere, you MUST populate the "unit_id" field with "1234" or "5566". Do not leave "unit_id" null if this information is visible. Check handwritten notes near top of receipt.
 - Infer category from description (Diesel/Unleaded → fuel; 'Weigh' or weights → scale).
 - Handle faded/angled/combined images best effort; flag issues in notes.
 - Prioritize bold/large text for totals/dates/weights.

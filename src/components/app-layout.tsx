@@ -68,7 +68,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/settlements', label: 'Settlements', icon: BookCopy },
     { href: '/drivers', label: 'Drivers', icon: Users },
     { href: '/owners', label: 'Owners', icon: Users },
-    { href: '/analyze-docs', label: 'Documents Upload', icon: FileText },
+    { href: '/document-center', label: 'Document Center', icon: FileText },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
