@@ -77,9 +77,18 @@ const createSettlementDoc = (settlement: SettlementSummary | OwnerSettlementSumm
 
         // Group Deductions
         const groupedDeductions = Object.values(settlement.deductions.reduce((acc, d) => {
-            // Use expenseCategory if available, otherwise check gallons for Fuel, otherwise description
-            const key = d.expenseCategory || (d.gallons ? 'Fuel' : d.description) || 'Other';
-            if (!acc[key]) acc[key] = { description: key, amount: 0, date: d.date }; // Keep one date or use latest? UI doesn't show date for grouped.
+            let key = d.description || 'Other';
+
+            // Group Fuel Expenses
+            if (d.expenseCategory === 'Fuel' || d.gallons !== undefined || (d.description && d.description.toLowerCase().includes('fuel'))) {
+                key = 'Fuel';
+            }
+            // Group Driver Pay Expenses
+            else if (d.expenseCategory === 'Driver Pay' || (d.description && d.description.toLowerCase().includes('driver pay'))) {
+                key = 'Driver Pay';
+            }
+
+            if (!acc[key]) acc[key] = { description: key, amount: 0, date: d.date };
             acc[key].amount += d.amount;
             return acc;
         }, {} as Record<string, { description: string; amount: number; date: string }>));

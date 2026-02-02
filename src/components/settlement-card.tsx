@@ -127,7 +127,27 @@ export function SettlementCard({ summary, type, onExportPDF, driverMap, owners }
                             <Table>
                                 <TableHeader><TableRow className="bg-muted/50"><TableHead>Item</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
                                 <TableBody>
-                                    {summary.deductions.map((d, i) => <TableRow key={i} className="hover:bg-muted/20"><TableCell>{d.description}</TableCell><TableCell className="text-right">{formatCurrency(d.amount)}</TableCell></TableRow>)}
+                                    {Object.values(summary.deductions.reduce((acc, d) => {
+                                        let key = d.description || 'Other';
+
+                                        // Group Fuel Expenses
+                                        if (d.expenseCategory === 'Fuel' || d.gallons !== undefined || d.description.toLowerCase().includes('fuel')) {
+                                            key = 'Fuel';
+                                        }
+                                        // Group Driver Pay Expenses
+                                        else if (d.expenseCategory === 'Driver Pay' || d.description.toLowerCase().includes('driver pay')) {
+                                            key = 'Driver Pay';
+                                        }
+
+                                        if (!acc[key]) acc[key] = { description: key, amount: 0 };
+                                        acc[key].amount += d.amount;
+                                        return acc;
+                                    }, {} as Record<string, { description: string; amount: number; }>)).map((d, i) => (
+                                        <TableRow key={i} className="hover:bg-muted/20">
+                                            <TableCell>{d.description}</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(d.amount)}</TableCell>
+                                        </TableRow>
+                                    ))}
                                 </TableBody>
                             </Table>
                         </div>
