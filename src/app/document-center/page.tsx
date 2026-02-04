@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Truck, Scale, Pencil, Save, X } from "lucide-react";
+import { useState, useRef } from "react";
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Truck, Scale, Pencil, Save, X, Eye, Trash2, CloudUpload, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,23 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, serverTimestamp, query, where, orderBy } from "firebase/firestore";
 import { useCollection } from "@/firebase/firestore/use-collection";
 import { useMemoFirebase } from "@/firebase/provider";
+import { getDocs, limit, updateDoc, doc, deleteDoc } from "firebase/firestore";
+import { Switch } from "@/components/ui/switch";
+import { WithId } from "@/lib/types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+
 
 interface LineItem {
     description: string;
@@ -54,15 +71,29 @@ interface ReceiptData {
     line_items: LineItem[];
     cat_scale_data?: CatScaleData;
     notes: string;
+    expenseOwner?: string;
+    relatedExpenseId?: string; // New field to link to expenses collection
+    reimbursable?: boolean;
+    imageUrl?: string;
+    allImageUrls?: string[];
 }
 
 interface AnalysisResult {
+    id: string; // New: Unique ID for state tracking
     file: string;
     receipts: ReceiptData[];
     error?: string;
+    loading?: boolean; // New: Local loading state
 }
 
-function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdateUnitId: (newUnitId: string) => void }) {
+function ReceiptRow({ receipt, availableUnitIds, onUpdateUnitId, onToggleReimbursable, onPreview, onDelete }: {
+    receipt: WithId<ReceiptData>,
+    availableUnitIds: string[],
+    onUpdateUnitId: (newUnitId: string) => void,
+    onToggleReimbursable: (val: boolean) => void,
+    onPreview: () => void,
+    onDelete: () => void
+}) {
     const [isOpen, setIsOpen] = useState(false);
     const [isEditingUnit, setIsEditingUnit] = useState(false);
     const [tempUnitId, setTempUnitId] = useState(receipt.unit_id || "");
@@ -93,12 +124,23 @@ function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdat
                 <TableCell className="align-top py-4" onClick={(e) => e.stopPropagation()}>
                     {isEditingUnit ? (
                         <div className="flex items-center gap-2">
-                            <Input
+                            <Select
                                 value={tempUnitId}
-                                onChange={(e) => setTempUnitId(e.target.value)}
-                                className="h-8 w-24"
-                                autoFocus
-                            />
+                                onValueChange={setTempUnitId}
+                            >
+                                <SelectTrigger className="h-8 w-[140px]">
+                                    <SelectValue placeholder="Select Unit ID" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <div className="max-h-[200px] overflow-y-auto">
+                                        {availableUnitIds.map((id) => (
+                                            <SelectItem key={id} value={id}>
+                                                {id}
+                                            </SelectItem>
+                                        ))}
+                                    </div>
+                                </SelectContent>
+                            </Select>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" onClick={handleSaveUnitId}>
                                 <Save className="h-4 w-4" />
                             </Button>
@@ -107,21 +149,32 @@ function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdat
                             </Button>
                         </div>
                     ) : (
-                        <div className="flex items-center gap-2 group">
-                            {receipt.unit_id ? (
-                                <Badge variant="outline" className="font-mono">{receipt.unit_id}</Badge>
-                            ) : (
-                                <Badge variant="destructive" className="opacity-80 hover:opacity-100">Unassigned</Badge>
-                            )}
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => setIsEditingUnit(true)}
-                            >
-                                <Pencil className="h-3 w-3" />
-                            </Button>
+                        <div className="flex flex-col gap-2 items-start group">
+                            <div className="flex items-center gap-2">
+                                {receipt.unit_id ? (
+                                    <Badge variant="outline" className="font-mono bg-muted/50 text-foreground border-border/50">{receipt.unit_id}</Badge>
+                                ) : (
+                                    <Badge variant="destructive" className="opacity-80 hover:opacity-100">Unassigned</Badge>
+                                )}
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => setIsEditingUnit(true)}
+                                >
+                                    <Pencil className="h-3 w-3" />
+                                </Button>
+                            </div>
                         </div>
+                    )}
+                </TableCell>
+                <TableCell className="align-top py-4">
+                    {receipt.expenseOwner ? (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/30 w-fit">
+                            <span className="font-medium text-foreground">{receipt.expenseOwner}</span>
+                        </div>
+                    ) : (
+                        <span className="text-xs text-muted-foreground italic">-</span>
                     )}
                 </TableCell>
                 <TableCell className="align-top py-4">
@@ -130,16 +183,60 @@ function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdat
                         <span className="text-xs text-muted-foreground">{receipt.vendor_location}</span>
                     </div>
                 </TableCell>
-                <TableCell className="align-top py-4">
-                    <span className="text-sm line-clamp-2">{description}</span>
-                </TableCell>
+
                 <TableCell className="text-right align-top py-4 font-bold text-green-600">
                     ${receipt.total_amount || "0.00"}
                 </TableCell>
                 <TableCell className="text-right align-top py-4">
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
+                    <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            {/* Reimburse Switch */}
+                            <div className="flex items-center space-x-2 mr-2">
+                                <Label htmlFor={`reimburse-${receipt.id}`} className="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline-block cursor-pointer">
+                                    Reimburse
+                                </Label>
+                                <Switch
+                                    id={`reimburse-${receipt.id}`}
+                                    checked={receipt.reimbursable || false}
+                                    onCheckedChange={(checked) => onToggleReimbursable(checked)}
+                                    className="scale-90"
+                                />
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center bg-muted/30 rounded-full p-1 border border-border/30">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-full text-blue-600 hover:text-blue-700 hover:bg-blue-100/50"
+                                    onClick={onPreview}
+                                    title="View Image"
+                                >
+                                    <Eye className="h-4 w-4" />
+                                </Button>
+                                <div className="w-px h-4 bg-border/50 mx-0.5"></div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-full text-red-600 hover:text-red-700 hover:bg-red-100/50"
+                                    onClick={onDelete}
+                                    title="Delete Receipt"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Expand Button */}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-8 rounded-full hover:bg-muted/50 flex items-center justify-center p-0 mt-2"
+                            onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                        >
+                            {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                    </div>
                 </TableCell>
             </TableRow>
             {isOpen && (
@@ -149,19 +246,24 @@ function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdat
                             {/* Detailed View - Similar to previous ReceiptCard content */}
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div>
-                                    <h4 className="font-semibold text-sm mb-2">Transaction Details</h4>
-                                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                                        <dt className="text-muted-foreground">Receipt #</dt>
-                                        <dd>{receipt.receipt_number || "N/A"}</dd>
-                                        <dt className="text-muted-foreground">Type</dt>
-                                        <dd className="capitalize">{receipt.receipt_type?.replace('_', ' ')}</dd>
-                                        <dt className="text-muted-foreground">Payment</dt>
-                                        <dd>{receipt.payment_method}</dd>
-                                        <dt className="text-muted-foreground">Subtotal</dt>
-                                        <dd>${receipt.subtotal}</dd>
-                                        <dt className="text-muted-foreground">Tax</dt>
-                                        <dd>${receipt.tax}</dd>
-                                    </dl>
+                                    <h4 className="font-semibold text-sm mb-3">Transaction Details</h4>
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                            <div className="text-muted-foreground">Type</div>
+                                            <div className="capitalize font-medium">{receipt.receipt_type?.replace('_', ' ')}</div>
+
+                                            <div className="text-muted-foreground">Total</div>
+                                            <div className="font-medium text-green-600">${receipt.total_amount}</div>
+
+                                            <div className="text-muted-foreground">Payment</div>
+                                            <div>{receipt.payment_method}</div>
+                                        </div>
+
+                                        <div className="pt-2 border-t">
+                                            <h5 className="text-xs font-semibold text-muted-foreground mb-1">Description</h5>
+                                            <p className="text-sm">{description}</p>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* CAT Scale Data */}
@@ -217,9 +319,24 @@ function ReceiptRow({ receipt, onUpdateUnitId }: { receipt: ReceiptData, onUpdat
 }
 
 export default function AnalyzeDocsPage() {
-    const [files, setFiles] = useState<FileList | null>(null);
-    const [results, setResults] = useState<AnalysisResult[]>([]);
-    const [loading, setLoading] = useState(false);
+    // State for pending uploads/analysis
+    interface PendingItem {
+        id: string;
+        fileName: string;
+        status: 'uploading' | 'analyzing' | 'error';
+        error?: string;
+    }
+
+    const [files, setFiles] = useState<File[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
+    const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+
+    // Preview & Delete State
+    const [previewReceipt, setPreviewReceipt] = useState<WithId<ReceiptData> | null>(null);
+    const [receiptToDelete, setReceiptToDelete] = useState<WithId<ReceiptData> | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Get functions, firestore, storage, user instance
     const functions = useFunctions();
@@ -240,39 +357,111 @@ export default function AnalyzeDocsPage() {
         [user, firestore]
     );
 
+
+
     const { data: savedReceipts, loading: loadingReceipts } = useCollection<ReceiptData>(receiptsQuery);
+
+    // Fetch Unit IDs (Owners & Drivers) for Dropdown
+    const ownersQuery = useMemoFirebase(() => {
+        if (!firestore) return null;
+        return query(collection(firestore, "owners"));
+    }, [firestore]);
+    const { data: owners } = useCollection<any>(ownersQuery);
+
+    const driversQuery = useMemoFirebase(() => {
+        if (!firestore) return null;
+        return query(collection(firestore, "drivers"));
+    }, [firestore]);
+    const { data: drivers } = useCollection<any>(driversQuery);
+
+    // Compute unique Unit IDs
+    const availableUnitIds = Array.from(new Set([
+        ...(owners?.map(o => o.unitId).filter(Boolean) || []),
+        ...(drivers?.map(d => d.unitId).filter(Boolean) || [])
+    ])).sort();
+
+
+    const convertFileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                const base64String = (reader.result as string).split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = (error) => reject(error);
+        });
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            setFiles(e.target.files);
-            setResults([]);
+            setFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
         }
     };
 
-    const handleAnalyze = async () => {
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            setFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const processBatch = async () => {
         if (!files || files.length === 0) return;
 
-        setLoading(true);
-        const newResults: AnalysisResult[] = [];
+        // Generate IDs and initial pending items
+        const newItems: PendingItem[] = files.map(file => ({
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            fileName: file.name,
+            status: 'uploading'
+        }));
 
-        // Prepare the callable function
+        setPendingItems(prev => [...newItems, ...prev]);
+
+        // Keep a reference to current files and clear state immediately
+        const currentFiles = [...files];
+        setFiles([]); // Clear selection UI
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+
         const analyzeDocs = httpsCallable(functions, 'analyzeDocs');
 
         try {
             const base64Images: string[] = [];
             const uploadedFileDetails: { url: string; path: string; name: string }[] = [];
 
-            // 1. Process all files: Read Base64 AND Upload to Storage
-            // We upload first (or in parallel) so we have URLs ready for the Firestore doc
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            // 1. Upload & Read
+            for (let i = 0; i < currentFiles.length; i++) {
+                const file = currentFiles[i];
+                const itemId = newItems[i].id;
+
+                // Update status to uploading if not already
+                setPendingItems(prev => prev.map(item =>
+                    item.id === itemId ? { ...item, status: 'uploading' } : item
+                ));
 
                 // Read Base64
                 const arrayBuffer = await file.arrayBuffer();
                 const base64String = Buffer.from(arrayBuffer).toString('base64');
                 base64Images.push(base64String);
 
-                // Upload if user is logged in
                 if (user && storage) {
                     const storagePath = `receipts/${user.uid}/${Date.now()}_${i}_${file.name}`;
                     const storageRef = ref(storage, storagePath);
@@ -281,210 +470,493 @@ export default function AnalyzeDocsPage() {
                     uploadedFileDetails.push({ url: downloadURL, path: storagePath, name: file.name });
                 }
             }
+            if (base64Images.length === 0) {
+                throw new Error("Failed to process any images from the selection.");
+            }
 
-            // 2. Call Cloud Function with ALL images
-            // The AI will decide whether to merge them or list them separately
+            // Update all to analyzing
+            setPendingItems(prev => prev.map(item =>
+                newItems.some(n => n.id === item.id) ? { ...item, status: 'analyzing' } : item
+            ));
+
+            // 2. Analyze
             const result = await analyzeDocs({ images: base64Images });
             const data = result.data as any;
             const extractedReceipts: ReceiptData[] = data.receipts || [];
 
-            // 3. Save to Firestore
+            // 3. Save
             if (user && firestore && extractedReceipts.length > 0) {
-                for (const receipt of extractedReceipts) {
+                for (let i = 0; i < extractedReceipts.length; i++) {
+                    const receipt = extractedReceipts[i];
+                    const fileDetails = uploadedFileDetails[i] || null;
+
+                    // Lookup Owner/Driver if Unit ID exists
+                    let expenseOwner = null;
+                    let expenseType: 'company' | 'driver' | 'owner' = 'company';
+                    let matchedDriverId = null;
+                    let matchedOwnerId = null;
+
+                    if (receipt.unit_id) {
+                        const cleanUnitId = receipt.unit_id.trim();
+
+                        // 1. Check Owners
+                        const qOwner = query(
+                            collection(firestore, "owners"),
+                            where("unitId", "==", cleanUnitId),
+                            limit(1)
+                        );
+                        const snapOwner = await getDocs(qOwner);
+                        if (!snapOwner.empty) {
+                            expenseOwner = snapOwner.docs[0].data().name;
+                            matchedOwnerId = snapOwner.docs[0].id;
+                            expenseType = 'owner';
+                        }
+
+                        // 2. Check Drivers
+                        const qDriver = query(
+                            collection(firestore, "drivers"),
+                            where("unitId", "==", cleanUnitId),
+                            limit(1)
+                        );
+                        const snapDriver = await getDocs(qDriver);
+                        if (!snapDriver.empty) {
+                            matchedDriverId = snapDriver.docs[0].id;
+                            // Only switch to driver billing if NO owner exists
+                            if (!matchedOwnerId) {
+                                const driverData = snapDriver.docs[0].data();
+                                expenseOwner = `${driverData.firstName} ${driverData.lastName}`;
+                                expenseType = 'driver';
+                            }
+                        }
+                    }
+
+                    // Create Expense Document
+                    let expenseId = null;
+                    try {
+                        const expenseDoc = await addDoc(collection(firestore, "expenses"), {
+                            description: receipt.vendor_name || "Receipt Expense",
+                            amount: typeof receipt.total_amount === 'number' ? receipt.total_amount : parseFloat(String(receipt.total_amount).replace(/[^0-9.]/g, '') || '0'),
+                            date: receipt.transaction_date || new Date().toISOString().split('T')[0],
+                            type: expenseType,
+                            unitId: receipt.unit_id || null,
+                            driverId: matchedDriverId,
+                            ownerId: matchedOwnerId,
+                            category: 'deduction',
+                            expenseCategory: 'Receipt',
+                            createdAt: serverTimestamp()
+                        });
+                        expenseId = expenseDoc.id;
+                    } catch (e) {
+                        console.error("Failed to create expense doc:", e);
+                    }
+
                     await addDoc(collection(firestore, "receipts"), {
                         ...receipt,
                         userId: user.uid,
-                        // Link to the first image as the "main" one for thumbnails, but store all
-                        imageUrl: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].url : null,
-                        storagePath: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].path : null,
-                        originalFileName: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].name : "batch",
-
-                        // Store comprehensive list of source images for this batch
-                        allImageUrls: uploadedFileDetails.map(f => f.url),
-                        allStoragePaths: uploadedFileDetails.map(f => f.path),
-
+                        expenseOwner: expenseOwner,
+                        relatedExpenseId: expenseId,
+                        imageUrl: fileDetails ? fileDetails.url : null,
+                        storagePath: fileDetails ? fileDetails.path : null,
+                        originalFileName: fileDetails ? fileDetails.name : "upload",
+                        allImageUrls: fileDetails ? [fileDetails.url] : [],
+                        allStoragePaths: fileDetails ? [fileDetails.path] : [],
                         analyzedAt: serverTimestamp(),
                         createdAt: serverTimestamp()
                     });
                 }
             }
 
-            newResults.push({
-                file: `Batch Analysis (${files.length} file${files.length > 1 ? 's' : ''})`,
-                receipts: extractedReceipts,
-            });
+            // Remove from pending (Success)
+            setPendingItems(prev => prev.filter(item => !newItems.some(n => n.id === item.id)));
 
         } catch (err: any) {
             console.error("Analysis Error", err);
-            newResults.push({
-                file: "Batch Analysis Failed",
-                receipts: [],
-                error: err.message || "Unknown error",
-            });
+            // Update status to error
+            setPendingItems(prev => prev.map(item =>
+                newItems.some(n => n.id === item.id)
+                    ? { ...item, status: 'error', error: err.message || "Unknown error" }
+                    : item
+            ));
         }
-
-        setResults(newResults);
-        setLoading(false);
     };
 
-    const updateReceiptUnitId = (fileIndex: number, receiptIndex: number, newUnitId: string) => {
-        setResults(prev => {
-            const next = [...prev];
-            next[fileIndex].receipts[receiptIndex].unit_id = newUnitId;
-            return next;
-        });
+    const dismissError = (itemId: string) => {
+        setPendingItems(prev => prev.filter(i => i.id !== itemId));
+    };
+
+    const updateReceiptUnitId = async (receiptId: string, newUnitId: string, relatedExpenseId?: string) => {
+        if (!firestore || !user) return;
+
+        try {
+            // Lookup new owner/driver
+            let newOwner = null;
+            let newType = 'company';
+            let newDriverId = null;
+            let newOwnerId = null;
+
+            if (newUnitId) {
+                const cleanId = newUnitId.trim();
+
+                // Check Owner
+                const qObs = query(collection(firestore, "owners"), where("unitId", "==", cleanId), limit(1));
+                const snapObs = await getDocs(qObs);
+                if (!snapObs.empty) {
+                    newOwner = snapObs.docs[0].data().name;
+                    newOwnerId = snapObs.docs[0].id;
+                    newType = 'owner';
+                }
+
+                // Check Driver (Link driver but only override type if no owner)
+                const qDrv = query(collection(firestore, "drivers"), where("unitId", "==", cleanId), limit(1));
+                const snapDrv = await getDocs(qDrv);
+                if (!snapDrv.empty) {
+                    const dData = snapDrv.docs[0].data();
+                    newDriverId = snapDrv.docs[0].id; // Always link driver
+
+                    if (!newOwnerId) {
+                        newOwner = `${dData.firstName} ${dData.lastName}`;
+                        newType = 'driver';
+                    }
+                }
+            }
+
+            // Update Doc
+            await updateDoc(doc(firestore, "receipts", receiptId), {
+                unit_id: newUnitId,
+                expenseOwner: newOwner
+            });
+
+            // Update Linked Expense
+            if (relatedExpenseId) {
+                await updateDoc(doc(firestore, "expenses", relatedExpenseId), {
+                    unitId: newUnitId,
+                    type: newType,
+                    ownerId: newOwnerId,
+                    driverId: newDriverId
+                });
+            }
+
+        } catch (error) {
+            console.error("Failed to update unit ID:", error);
+        }
+    };
+
+    const toggleReimbursable = async (receipt: WithId<ReceiptData>, isReimbursable: boolean) => {
+        if (!firestore || !receipt.id) return;
+        try {
+            // Update Receipt
+            await updateDoc(doc(firestore, "receipts", receipt.id), {
+                reimbursable: isReimbursable
+            });
+
+            // Update Expense
+            if (receipt.relatedExpenseId) {
+                await updateDoc(doc(firestore, "expenses", receipt.relatedExpenseId), {
+                    reimbursable: isReimbursable
+                });
+            }
+        } catch (err) {
+            console.error("Failed to toggle reimbursable:", err);
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (!firestore || !receiptToDelete) return;
+        setIsDeleting(true);
+        try {
+            // Delete Receipt
+            await deleteDoc(doc(firestore, "receipts", receiptToDelete.id));
+
+            // Delete Expense if linked
+            if (receiptToDelete.relatedExpenseId) {
+                await deleteDoc(doc(firestore, "expenses", receiptToDelete.relatedExpenseId));
+            }
+        } catch (error) {
+            console.error("Failed to delete receipt:", error);
+        } finally {
+            setIsDeleting(false);
+            setReceiptToDelete(null);
+        }
     };
 
     return (
         <div className="container mx-auto py-10 px-4 max-w-6xl">
-            <div className="flex items-center gap-3 mb-6">
-                <Truck className="h-8 w-8 text-primary" />
-                <h1 className="text-3xl font-bold text-foreground">Document Center</h1>
-            </div>
-
-            <Card className="mb-8 border-dashed border-2 shadow-none bg-muted/20">
-                <CardHeader>
-                    <CardTitle>Upload Documents</CardTitle>
-                    <CardDescription>
-                        Select images (Receipts, Scale Tickets, Combos). Our AI will extract all details suitable for IRS compliance.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid w-full items-center gap-4">
-                        <div className="flex flex-col space-y-1.5">
-                            <Label htmlFor="doc-upload">Files</Label>
-                            <Input
-                                id="doc-upload"
-                                type="file"
-                                multiple
-                                onChange={handleFileChange}
-                                accept="image/*"
-                                className="cursor-pointer bg-background"
-                            />
-                        </div>
-                    </div>
-                </CardContent>
-                <CardFooter className="flex justify-end">
-                    <Button onClick={handleAnalyze} disabled={!files || loading} size="lg">
-                        {loading ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Processing with AI...
-                            </>
-                        ) : (
-                            <>
-                                <Upload className="mr-2 h-4 w-4" />
-                                Analyze Docs
-                            </>
-                        )}
-                    </Button>
-                </CardFooter>
-            </Card>
-
-            {results.length > 0 && (
-                <div className="space-y-8 mb-12">
-                    <h2 className="text-2xl font-bold">Analysis Results</h2>
-                    {/* Flat list of all extracted items? Or grouped by file? 
-                        User asked for "The page should display all the extracted data".
-                        Grouped by file is usually safer for context, but table structure implies a flat list feels better.
-                        However, let's keep grouped by file for now to show context of errors/success per file.
-                    */}
-                    {results.map((res, fileIndex) => (
-                        <Card key={fileIndex} className="overflow-hidden">
-                            <CardHeader className="bg-muted/10 border-b py-3">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                    {res.error ? <AlertCircle className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
-                                    {res.file}
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                                {res.error ? (
-                                    <div className="p-4 bg-red-50 text-red-600">
-                                        Error: {res.error}
-                                    </div>
-                                ) : (
-                                    res.receipts.length === 0 ? (
-                                        <div className="p-8 text-center text-muted-foreground italic">No receipts found in this image.</div>
-                                    ) : (
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow className="bg-muted/50">
-                                                    <TableHead className="w-[120px]">Date</TableHead>
-                                                    <TableHead className="w-[150px]">Unit ID</TableHead>
-                                                    <TableHead>Vendor</TableHead>
-                                                    <TableHead className="w-[30%]">Description</TableHead>
-                                                    <TableHead className="text-right">Total</TableHead>
-                                                    <TableHead className="w-[50px]"></TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {res.receipts.map((receipt, rIdx) => (
-                                                    <ReceiptRow
-                                                        key={rIdx}
-                                                        receipt={receipt}
-                                                        onUpdateUnitId={(newId) => updateReceiptUnitId(fileIndex, rIdx, newId)}
-                                                    />
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    )
-                                )}
-                            </CardContent>
-                        </Card>
-                    ))}
+            <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                    <Truck className="h-8 w-8 text-primary" />
+                    <h1 className="text-3xl font-bold text-foreground">Document Center</h1>
                 </div>
-            )}
+            </div>
+            {/* Upload Section */}
+            <div className={`grid md:grid-cols-5 gap-6 mb-12 transition-all duration-300 ease-in-out ${isDragging ? 'scale-[1.01]' : ''}`}>
 
-            {/* Saved Receipts Section */}
+                {/* 1. Drag & Drop Zone (Left - 3 cols) */}
+                <Card
+                    className={`md:col-span-3 border-2 border-dashed shadow-sm relative overflow-hidden transition-colors ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/50 hover:bg-muted/10'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
+                    <CardContent className="flex flex-col items-center justify-center p-10 h-full min-h-[300px] text-center space-y-4 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                        <div className={`p-5 rounded-full bg-background shadow-sm ring-1 ring-border transition-transform duration-300 ${isDragging ? 'scale-110 ring-primary' : ''}`}>
+                            <CloudUpload className={`h-10 w-10 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                        </div>
+                        <div className="space-y-1">
+                            <h3 className="text-xl font-semibold tracking-tight">
+                                {isDragging ? "Drop files now!" : "Upload Documents"}
+                            </h3>
+                            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                                Drag and drop your receipts, scale tickets, or full invoices here.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full max-w-xs pt-4">
+                            <div className="h-px bg-border flex-1" />
+                            <span className="text-xs text-muted-foreground uppercase font-medium">Or</span>
+                            <div className="h-px bg-border flex-1" />
+                        </div>
+
+                        <Button variant="secondary" className="mt-2 pointer-events-none">
+                            Browse Files
+                        </Button>
+
+                        <Input
+                            id="doc-upload"
+                            type="file"
+                            multiple
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleFileChange}
+                            ref={fileInputRef}
+                        />
+                    </CardContent>
+                </Card>
+
+                {/* 2. Staging & Analyze Area (Right - 2 cols) */}
+                <Card className="md:col-span-2 flex flex-col h-full border shadow-sm">
+                    <CardHeader className="pb-3 border-b bg-muted/5">
+                        <CardTitle className="text-base font-medium flex justify-between items-center">
+                            <span>Analysis Queue</span>
+                            <Badge variant={files.length > 0 ? "default" : "secondary"} className="transition-all">
+                                {files.length} Ready
+                            </Badge>
+                        </CardTitle>
+                    </CardHeader>
+
+                    <div className="flex-1 min-h-[220px] relative bg-background">
+                        {files.length > 0 ? (
+                            <ScrollArea className="h-full absolute inset-0">
+                                <div className="p-4 space-y-3">
+                                    {files.map((file, idx) => (
+                                        <div key={idx} className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors group">
+                                            <div className="h-12 w-12 bg-muted rounded-md border flex items-center justify-center shrink-0 overflow-hidden">
+                                                {file.type.startsWith('image/') ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={URL.createObjectURL(file)} alt="Preview" className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <FileText className="h-6 w-6 text-muted-foreground" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0 pt-1">
+                                                <p className="text-sm font-medium truncate leading-none mb-1">{file.name}</p>
+                                                <p className="text-[10px] text-muted-foreground font-mono">{(file.size / 1024).toFixed(0)} KB</p>
+                                            </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 text-muted-foreground hover:text-red-600 -mr-1"
+                                                onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground p-6 text-center opacity-40 select-none">
+                                <ImageIcon className="h-12 w-12 mb-3 stroke-1" />
+                                <p className="text-sm font-medium">Queue is empty</p>
+                                <p className="text-xs">Select files to begin analysis</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-4 border-t bg-muted/5 mt-auto">
+                        <Button
+                            size="lg"
+                            className="w-full font-semibold shadow-md"
+                            onClick={processBatch}
+                            disabled={files.length === 0 || pendingItems.some(b => b.status === 'uploading' || b.status === 'analyzing')}
+                        >
+                            {pendingItems.some(b => b.status === 'uploading' || b.status === 'analyzing') ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    Analyze {files.length} Document{files.length !== 1 ? 's' : ''}
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </Card>
+            </div>
+            {/* Saved Receipts & Pending Batches Section */}
             <div className="space-y-4">
                 <div className="flex items-center gap-3">
                     <FileText className="h-6 w-6 text-primary" />
                     <h2 className="text-2xl font-bold">Saved Receipts</h2>
                 </div>
 
-                {loadingReceipts ? (
-                    <div className="text-center p-8">
-                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-                        <p className="text-muted-foreground mt-2">Loading saved receipts...</p>
+                {
+                    loadingReceipts && pendingItems.length === 0 ? (
+                        <div className="text-center p-8">
+                            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                            <p className="text-muted-foreground mt-2">Loading saved receipts...</p>
+                        </div>
+                    ) : savedReceipts.length === 0 && pendingItems.length === 0 ? (
+                        <Card className="bg-muted/10 border-dashed">
+                            <CardContent className="py-12 text-center text-muted-foreground">
+                                <p>No saved receipts found.</p>
+                                <p className="text-sm">Upload documents above to get started.</p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card className="overflow-hidden">
+                            <CardContent className="p-0">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-muted/50">
+                                            <TableHead className="w-[120px]">Date</TableHead>
+                                            <TableHead className="w-[140px]">Unit ID</TableHead>
+                                            <TableHead className="w-[150px]">Bill To</TableHead>
+                                            <TableHead>Vendor</TableHead>
+
+                                            <TableHead className="text-right">Total</TableHead>
+                                            <TableHead className="w-[120px]"></TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {/* Render Pending Items First */}
+                                        {pendingItems.map(item => (
+                                            <TableRow key={item.id} className="bg-muted/5 animate-pulse">
+                                                <TableCell className="align-top py-4">
+                                                    <div className="h-4 w-20 bg-muted/20 rounded"></div>
+                                                </TableCell>
+                                                <TableCell className="align-top py-4">
+                                                    <div className="h-4 w-12 bg-muted/20 rounded"></div>
+                                                </TableCell>
+                                                <TableCell className="align-top py-4">
+                                                    <div className="h-4 w-16 bg-muted/20 rounded"></div>
+                                                </TableCell>
+                                                <TableCell className="align-top py-4">
+                                                    <div className="flex flex-col gap-2">
+                                                        <span className="font-semibold text-sm">{item.fileName}</span>
+                                                        {item.status === 'error' ? (
+                                                            <div className="flex items-center gap-2 text-red-500 text-xs">
+                                                                <AlertCircle className="h-3 w-3" />
+                                                                <span>{item.error}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                                                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                                                <span>
+                                                                    {item.status === 'uploading' ? 'Uploading...' : 'Analyzing (approx. 10s)...'}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-right align-top py-4">
+                                                    <div className="h-4 w-12 bg-muted/20 rounded ml-auto"></div>
+                                                </TableCell>
+                                                <TableCell className="text-right align-top py-4">
+                                                    {item.status === 'error' && (
+                                                        <Button variant="ghost" size="sm" onClick={() => dismissError(item.id)} className="h-6 px-2 text-xs border border-red-200 hover:bg-red-50 text-red-600">
+                                                            Dismiss
+                                                        </Button>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+
+                                        {/* Render Real Receipts */}
+                                        {savedReceipts.map((receipt) =>
+                                            <ReceiptRow
+                                                key={receipt.id as any}
+                                                receipt={receipt}
+                                                availableUnitIds={availableUnitIds}
+                                                onUpdateUnitId={(newId) => updateReceiptUnitId(receipt.id as any, newId, receipt.relatedExpenseId)}
+                                                onToggleReimbursable={(val) => toggleReimbursable(receipt, val)}
+                                                onPreview={() => setPreviewReceipt(receipt)}
+                                                onDelete={() => setReceiptToDelete(receipt)}
+                                            />
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+                    )
+                }
+            </div >
+
+            {/* Image Preview Dialog */}
+            <Dialog open={!!previewReceipt} onOpenChange={(open) => !open && setPreviewReceipt(null)}>
+                <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+                    <DialogHeader className="p-4 border-b">
+                        <DialogTitle>Receipt Preview</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-black/5">
+                        {previewReceipt?.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                                src={previewReceipt.imageUrl}
+                                alt="Receipt"
+                                className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+                            />
+                        ) : (
+                            <div className="text-muted-foreground">No image available</div>
+                        )}
                     </div>
-                ) : savedReceipts.length === 0 ? (
-                    <Card className="bg-muted/10 border-dashed">
-                        <CardContent className="py-12 text-center text-muted-foreground">
-                            <p>No saved receipts found.</p>
-                            <p className="text-sm">Upload documents above to get started.</p>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <Card className="overflow-hidden">
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="bg-muted/50">
-                                        <TableHead className="w-[120px]">Date</TableHead>
-                                        <TableHead className="w-[150px]">Unit ID</TableHead>
-                                        <TableHead>Vendor</TableHead>
-                                        <TableHead className="w-[30%]">Description</TableHead>
-                                        <TableHead className="text-right">Total</TableHead>
-                                        <TableHead className="w-[50px]"></TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {savedReceipts.map((receipt) => (
-                                        <ReceiptRow
-                                            key={receipt.id as any /* WithId adds id */}
-                                            receipt={receipt}
-                                            onUpdateUnitId={(newId) => {
-                                                console.log("Update unit id for saved receipt", receipt.id, newId);
-                                                // TODO: Implement update logic for Firestore documents
-                                            }}
-                                        />
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                )}
-            </div>
-        </div>
+                    {previewReceipt?.allImageUrls && previewReceipt.allImageUrls.length > 1 && (
+                        <div className="p-4 border-t bg-background overflow-x-auto whitespace-nowrap">
+                            <div className="flex gap-2">
+                                {previewReceipt.allImageUrls.map((url, idx) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        key={idx}
+                                        src={url}
+                                        alt={`Page ${idx + 1}`}
+                                        className={`h-20 w-auto object-cover rounded border cursor-pointer hover:opacity-80 ${url === previewReceipt.imageUrl ? 'ring-2 ring-primary' : ''}`}
+                                        onClick={() => setPreviewReceipt(prev => prev ? ({ ...prev, imageUrl: url }) : null)}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog >
+
+            {/* Delete Confirmation Alert */}
+            < AlertDialog open={!!receiptToDelete} onOpenChange={(open) => !open && setReceiptToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete this receipt and its associated expense record.
+                            {receiptToDelete?.relatedExpenseId && " The linked expense in the Expenses tab will also be removed."}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
+                            {isDeleting ? "Deleting..." : "Delete"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog >
+        </div >
     );
 }

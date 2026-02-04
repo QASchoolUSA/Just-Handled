@@ -28,7 +28,7 @@ Output ONLY valid JSON as an array of receipts. Extract attributes:
     "transaction_time": "HH:MM",
     "vendor_name": "Business/store/scale name",
     "vendor_location": "City, state",
-    "unit_id": "Extract ONLY the main 4-digit Truck/Unit ID (e.g., '2319'). Do NOT include 'TRK', '#', 'Trailer', 'Load', or other text. Ignore Trailer/Load numbers. Return ONLY the digits.",
+    "unit_id": "Extract ONLY the main 4-digit Truck/Unit ID (e.g., '2319'). CRITICAL: Do NOT extract 'Unit', 'Suite', or 'Ste' numbers from addresses (e.g. '123 Main St Unit B' -> Unit ID is NULL). Only extract if labeled as Truck/Tractor/Unit # separate from an address.",
     "payment_method": "Cash, Card, Fuel Card",
     "subtotal": "Number",
     "tax": "Number",
@@ -48,7 +48,8 @@ Output ONLY valid JSON as an array of receipts. Extract attributes:
       "scale_id": "ID",
       "ticket_number": "Ticket #"
     },
-    "notes": "Notes about merging or issues"
+    "notes": "Notes about merging or issues",
+    "source_image_indices": "Array of integers (0-based) representing the input images used for this receipt. Example: [0] or [0, 1] for merged docs."
   }
 ]
 

@@ -96,6 +96,19 @@ export function useSettlementCalculations(
                     }
                 }
             }
+
+            // Reimbursement: Owner expense paid by driver
+            if (expense.type === 'owner' && expense.reimbursable && expense.driverId) {
+                const summary = summaryByDriver.get(expense.driverId);
+                if (summary) {
+                    summary.totalAdditions += expense.amount;
+                    summary.additions.push({
+                        ...expense,
+                        category: 'addition',
+                        description: `Reimbursement: ${expense.description}`
+                    });
+                }
+            }
         });
 
         summaryByDriver.forEach(summary => {

@@ -84,6 +84,9 @@ export type Expense = {
   expenseCategory?: string; // e.g. Fuel, Insurance, ELD, etc.
   gallons?: number;
   locationState?: string;
+  reimbursable?: boolean;
+  imageUrl?: string;
+  allImageUrls?: string[];
 };
 
 export type AccountSettings = {
