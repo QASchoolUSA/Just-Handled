@@ -67,7 +67,8 @@ Rules:
 // Input type
 interface AnalyzeDocsData {
     base64Image?: string; // Legacy support (optional)
-    images?: string[];    // New array support
+    images?: string[];    // Legacy array support
+    files?: { data: string; mimeType: string }[]; // New robust support
 }
 
 export const analyzeDocs = onCall<AnalyzeDocsData>(
@@ -78,30 +79,39 @@ export const analyzeDocs = onCall<AnalyzeDocsData>(
         memory: "1GiB"
     },
     async (request) => {
-        console.log("analyzeDocs v3 loaded");
+        console.log("analyzeDocs v4 loaded");
         // Auth check
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated.');
         }
 
-        const { base64Image, images } = request.data;
-        const inputs: string[] = [];
+        const { base64Image, images, files } = request.data;
+        const inputs: { data: string; mimeType: string }[] = [];
 
-        if (images && Array.isArray(images) && images.length > 0) {
-            inputs.push(...images);
+        if (files && Array.isArray(files) && files.length > 0) {
+            inputs.push(...files);
+        } else if (images && Array.isArray(images) && images.length > 0) {
+            inputs.push(...images.map(img => ({ data: img, mimeType: 'image/jpeg' })));
         } else if (base64Image) {
-            inputs.push(base64Image);
+            inputs.push({ data: base64Image, mimeType: 'image/jpeg' });
         } else {
-            throw new HttpsError('invalid-argument', 'No images provided.');
+            throw new HttpsError('invalid-argument', 'No images/files provided.');
         }
 
         try {
             // Prepare prompt parts
             const promptParts: any[] = [{ text: ANALYZE_PROMPT }];
 
-            // Add all images
-            for (const b64 of inputs) {
-                promptParts.push({ media: { url: `data:image/jpeg;base64,${b64}` } });
+            // Add all files
+            for (const file of inputs) {
+                const mime = file.mimeType || 'image/jpeg';
+                const b64 = file.data;
+                promptParts.push({
+                    media: {
+                        url: `data:${mime};base64,${b64}`,
+                        contentType: mime // Optional but helpful hint
+                    }
+                });
             }
 
             const result = await ai.generate({

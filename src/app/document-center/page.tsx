@@ -76,6 +76,8 @@ interface ReceiptData {
     reimbursable?: boolean;
     imageUrl?: string;
     allImageUrls?: string[];
+    originalFileName?: string;
+    storagePath?: string;
 }
 
 interface AnalysisResult {
@@ -444,8 +446,8 @@ export default function AnalyzeDocsPage() {
         const analyzeDocs = httpsCallable(functions, 'analyzeDocs');
 
         try {
-            const base64Images: string[] = [];
-            const uploadedFileDetails: { url: string; path: string; name: string }[] = [];
+            const filePayloads: { data: string; mimeType: string }[] = [];
+            const uploadedFileDetails: { url: string; path: string; name: string; mimeType: string }[] = [];
 
             // 1. Upload & Read
             for (let i = 0; i < currentFiles.length; i++) {
@@ -460,18 +462,18 @@ export default function AnalyzeDocsPage() {
                 // Read Base64
                 const arrayBuffer = await file.arrayBuffer();
                 const base64String = Buffer.from(arrayBuffer).toString('base64');
-                base64Images.push(base64String);
+                filePayloads.push({ data: base64String, mimeType: file.type });
 
                 if (user && storage) {
                     const storagePath = `receipts/${user.uid}/${Date.now()}_${i}_${file.name}`;
                     const storageRef = ref(storage, storagePath);
                     await uploadBytes(storageRef, file);
                     const downloadURL = await getDownloadURL(storageRef);
-                    uploadedFileDetails.push({ url: downloadURL, path: storagePath, name: file.name });
+                    uploadedFileDetails.push({ url: downloadURL, path: storagePath, name: file.name, mimeType: file.type });
                 }
             }
-            if (base64Images.length === 0) {
-                throw new Error("Failed to process any images from the selection.");
+            if (filePayloads.length === 0) {
+                throw new Error("Failed to process any files from the selection.");
             }
 
             // Update all to analyzing
@@ -480,7 +482,7 @@ export default function AnalyzeDocsPage() {
             ));
 
             // 2. Analyze
-            const result = await analyzeDocs({ images: base64Images });
+            const result = await analyzeDocs({ files: filePayloads });
             const data = result.data as any;
             const extractedReceipts: ReceiptData[] = data.receipts || [];
 
@@ -910,12 +912,20 @@ export default function AnalyzeDocsPage() {
                     </DialogHeader>
                     <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-black/5">
                         {previewReceipt?.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                                src={previewReceipt.imageUrl}
-                                alt="Receipt"
-                                className="max-w-full max-h-full object-contain rounded-md shadow-sm"
-                            />
+                            previewReceipt.imageUrl.toLowerCase().includes('.pdf') || (previewReceipt.originalFileName?.toLowerCase().endsWith('.pdf')) ? (
+                                <iframe
+                                    src={previewReceipt.imageUrl}
+                                    className="w-full h-full rounded-md shadow-sm border-none"
+                                    title="PDF Preview"
+                                />
+                            ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={previewReceipt.imageUrl}
+                                    alt="Receipt"
+                                    className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+                                />
+                            )
                         ) : (
                             <div className="text-muted-foreground">No image available</div>
                         )}
