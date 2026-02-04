@@ -17,8 +17,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useFunctions } from "@/firebase/provider";
+import { useFunctions, useFirestore, useStorage, useUser } from "@/firebase/provider";
 import { httpsCallable } from "firebase/functions";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, serverTimestamp, query, where, orderBy } from "firebase/firestore";
+import { useCollection } from "@/firebase/firestore/use-collection";
+import { useMemoFirebase } from "@/firebase/provider";
 
 interface LineItem {
     description: string;
@@ -217,8 +221,26 @@ export default function AnalyzeDocsPage() {
     const [results, setResults] = useState<AnalysisResult[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Get functions instance
+    // Get functions, firestore, storage, user instance
     const functions = useFunctions();
+    const firestore = useFirestore();
+    const storage = useStorage();
+    const { user } = useUser();
+
+    // Query for saved receipts
+    const receiptsQuery = useMemoFirebase(
+        () => {
+            if (!user || !firestore) return null;
+            return query(
+                collection(firestore, "receipts"),
+                where("userId", "==", user.uid),
+                orderBy("createdAt", "desc")
+            );
+        },
+        [user, firestore]
+    );
+
+    const { data: savedReceipts, loading: loadingReceipts } = useCollection<ReceiptData>(receiptsQuery);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -228,7 +250,7 @@ export default function AnalyzeDocsPage() {
     };
 
     const handleAnalyze = async () => {
-        if (!files) return;
+        if (!files || files.length === 0) return;
 
         setLoading(true);
         const newResults: AnalysisResult[] = [];
@@ -236,30 +258,69 @@ export default function AnalyzeDocsPage() {
         // Prepare the callable function
         const analyzeDocs = httpsCallable(functions, 'analyzeDocs');
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
+        try {
+            const base64Images: string[] = [];
+            const uploadedFileDetails: { url: string; path: string; name: string }[] = [];
 
-            try {
-                // Convert to base64
+            // 1. Process all files: Read Base64 AND Upload to Storage
+            // We upload first (or in parallel) so we have URLs ready for the Firestore doc
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                // Read Base64
                 const arrayBuffer = await file.arrayBuffer();
                 const base64String = Buffer.from(arrayBuffer).toString('base64');
+                base64Images.push(base64String);
 
-                // Call Cloud Function
-                const result = await analyzeDocs({ base64Image: base64String });
-                const data = result.data as any;
-
-                newResults.push({
-                    file: file.name,
-                    receipts: data.receipts || [],
-                });
-            } catch (err: any) {
-                console.error("Analysis Error", err);
-                newResults.push({
-                    file: file.name,
-                    receipts: [],
-                    error: err.message || "Unknown error",
-                });
+                // Upload if user is logged in
+                if (user && storage) {
+                    const storagePath = `receipts/${user.uid}/${Date.now()}_${i}_${file.name}`;
+                    const storageRef = ref(storage, storagePath);
+                    await uploadBytes(storageRef, file);
+                    const downloadURL = await getDownloadURL(storageRef);
+                    uploadedFileDetails.push({ url: downloadURL, path: storagePath, name: file.name });
+                }
             }
+
+            // 2. Call Cloud Function with ALL images
+            // The AI will decide whether to merge them or list them separately
+            const result = await analyzeDocs({ images: base64Images });
+            const data = result.data as any;
+            const extractedReceipts: ReceiptData[] = data.receipts || [];
+
+            // 3. Save to Firestore
+            if (user && firestore && extractedReceipts.length > 0) {
+                for (const receipt of extractedReceipts) {
+                    await addDoc(collection(firestore, "receipts"), {
+                        ...receipt,
+                        userId: user.uid,
+                        // Link to the first image as the "main" one for thumbnails, but store all
+                        imageUrl: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].url : null,
+                        storagePath: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].path : null,
+                        originalFileName: uploadedFileDetails.length > 0 ? uploadedFileDetails[0].name : "batch",
+
+                        // Store comprehensive list of source images for this batch
+                        allImageUrls: uploadedFileDetails.map(f => f.url),
+                        allStoragePaths: uploadedFileDetails.map(f => f.path),
+
+                        analyzedAt: serverTimestamp(),
+                        createdAt: serverTimestamp()
+                    });
+                }
+            }
+
+            newResults.push({
+                file: `Batch Analysis (${files.length} file${files.length > 1 ? 's' : ''})`,
+                receipts: extractedReceipts,
+            });
+
+        } catch (err: any) {
+            console.error("Analysis Error", err);
+            newResults.push({
+                file: "Batch Analysis Failed",
+                receipts: [],
+                error: err.message || "Unknown error",
+            });
         }
 
         setResults(newResults);
@@ -321,7 +382,8 @@ export default function AnalyzeDocsPage() {
             </Card>
 
             {results.length > 0 && (
-                <div className="space-y-8">
+                <div className="space-y-8 mb-12">
+                    <h2 className="text-2xl font-bold">Analysis Results</h2>
                     {/* Flat list of all extracted items? Or grouped by file? 
                         User asked for "The page should display all the extracted data".
                         Grouped by file is usually safer for context, but table structure implies a flat list feels better.
@@ -372,6 +434,57 @@ export default function AnalyzeDocsPage() {
                     ))}
                 </div>
             )}
+
+            {/* Saved Receipts Section */}
+            <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                    <FileText className="h-6 w-6 text-primary" />
+                    <h2 className="text-2xl font-bold">Saved Receipts</h2>
+                </div>
+
+                {loadingReceipts ? (
+                    <div className="text-center p-8">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                        <p className="text-muted-foreground mt-2">Loading saved receipts...</p>
+                    </div>
+                ) : savedReceipts.length === 0 ? (
+                    <Card className="bg-muted/10 border-dashed">
+                        <CardContent className="py-12 text-center text-muted-foreground">
+                            <p>No saved receipts found.</p>
+                            <p className="text-sm">Upload documents above to get started.</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <Card className="overflow-hidden">
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-muted/50">
+                                        <TableHead className="w-[120px]">Date</TableHead>
+                                        <TableHead className="w-[150px]">Unit ID</TableHead>
+                                        <TableHead>Vendor</TableHead>
+                                        <TableHead className="w-[30%]">Description</TableHead>
+                                        <TableHead className="text-right">Total</TableHead>
+                                        <TableHead className="w-[50px]"></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {savedReceipts.map((receipt) => (
+                                        <ReceiptRow
+                                            key={receipt.id as any /* WithId adds id */}
+                                            receipt={receipt}
+                                            onUpdateUnitId={(newId) => {
+                                                console.log("Update unit id for saved receipt", receipt.id, newId);
+                                                // TODO: Implement update logic for Firestore documents
+                                            }}
+                                        />
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
         </div>
     );
 }
