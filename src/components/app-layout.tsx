@@ -12,6 +12,7 @@ import {
   Sun,
   Moon,
   FileText,
+  Landmark,
 } from 'lucide-react';
 import { useTheme } from "next-themes"
 
@@ -69,6 +70,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/drivers', label: 'Drivers', icon: Users },
     { href: '/owners', label: 'Owners', icon: Users },
     { href: '/document-center', label: 'Document Center', icon: FileText },
+    { href: '/factoring', label: 'Factoring', icon: Landmark },
     { href: '/reports', label: 'Reports', icon: FileText },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
