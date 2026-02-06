@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { format, subMonths, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { Calendar as CalendarIcon, Download, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -174,7 +175,7 @@ export default function ReportsPage() {
                             variant={activePreset === preset.value ? "secondary" : "ghost"}
                             size="sm"
                             onClick={() => handlePresetClick(preset.months, preset.value)}
-                            className={cn(activePreset === preset.value && "bg-white shadow-sm")}
+                            className={cn(activePreset === preset.value && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90")}
                         >
                             {preset.label}
                         </Button>
@@ -187,7 +188,7 @@ export default function ReportsPage() {
                                 size="sm"
                                 className={cn(
                                     "gap-2",
-                                    activePreset === "custom" && "bg-white shadow-sm"
+                                    activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
                                 )}
                             >
                                 <CalendarIcon className="h-4 w-4" />
@@ -273,6 +274,22 @@ export default function ReportsPage() {
                     </Card>
                 </div>
             )}
+
+            <div className="grid md:grid-cols-2 gap-6 mt-6">
+                <Link href="/reports/profit-loss" className="block h-full">
+                    <Card className="h-full hover:bg-muted/50 transition-colors">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-purple-600" />
+                                Profit & Loss Statement
+                            </CardTitle>
+                            <CardDescription>
+                                View detailed Income Statement with breakdown of Revenue, COGS, and Expenses.
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
+                </Link>
+            </div>
         </div>
     );
 }
