@@ -94,8 +94,8 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
             <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600 text-white shadow-lg shadow-primary/20 transition-all duration-200">
               <span className="font-bold text-sm">JH</span>
             </div>
-            <div className="flex flex-col flex-1 text-left min-w-0 group-data-[collapsible=icon]:hidden transition-all duration-200 pl-1">
-              <span className="font-display text-2xl font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70 truncate">
+            <div className="flex flex-col flex-1 items-center justify-center text-center h-full min-w-0 group-data-[collapsible=icon]:hidden transition-all duration-200">
+              <span className="font-display text-2xl font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70 truncate pb-0.5">
                 Just Handled
               </span>
             </div>
