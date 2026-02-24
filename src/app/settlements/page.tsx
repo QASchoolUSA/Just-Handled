@@ -947,6 +947,28 @@ export default function SettlementsPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="rounded-xl w-full sm:w-auto h-12 px-4 shadow-sm border-border/40">
+                <FileDown className="mr-2 h-4 w-4 text-muted-foreground" /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[220px]">
+              <DropdownMenuLabel>Export Options</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleExportInvoices} disabled={!loads || loads.length === 0} className="gap-2 cursor-pointer">
+                <FileDown className="h-4 w-4 text-muted-foreground" /> Export Invoices
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportJournal} disabled={settlementSummary.length === 0} className="gap-2 cursor-pointer">
+                <FileDown className="h-4 w-4 text-muted-foreground" /> Export Journal
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleDownloadBatch} disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0} className="gap-2 cursor-pointer">
+                <Download className="h-4 w-4 text-muted-foreground" /> Download All Statements
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Week Picker */}
           <div className="flex items-center gap-2 sm:gap-4 bg-muted/30 p-2 rounded-xl border border-border/40 w-full sm:w-auto justify-center">
             <Button variant="ghost" size="icon" onClick={handlePrevWeek} className="h-8 w-8 rounded-lg">
@@ -978,21 +1000,6 @@ export default function SettlementsPage() {
             <Button variant="ghost" size="icon" onClick={handleNextWeek} className="h-8 w-8 rounded-lg">
               <ChevronRight className="h-4 w-4" />
             </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-            <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0} className="rounded-xl flex-1 sm:flex-none">
-              <FileDown className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Export Invoices</span><span className="sm:hidden">Invoices</span>
-            </Button>
-            <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl flex-1 sm:flex-none">
-              <FileDown className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Export Journal</span><span className="sm:hidden">Journal</span>
-            </Button>
-
-            {activeTab === 'summary' && (
-              <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl flex-1 sm:flex-none w-full sm:w-auto mt-2 sm:mt-0" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
-                <Download className="mr-2 h-4 w-4" /> Download All Statements
-              </Button>
-            )}
           </div>
         </div>
       </div>

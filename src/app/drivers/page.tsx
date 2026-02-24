@@ -290,7 +290,19 @@ export default function DriversPage() {
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Driver Profiles</h1>
-          <p className="text-muted-foreground text-lg">Manage your drivers and their pay structures.</p>
+          <p className="text-muted-foreground text-lg">
+            Manage your drivers and their pay structures.
+            {drivers && drivers.length > 0 && (
+              <>
+                <span className="ml-2 inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                  {drivers.length} Total
+                </span>
+                <span className="ml-2 inline-flex items-center rounded-md bg-green-600 px-2 py-0.5 text-xs font-medium text-white">
+                  {drivers.filter(d => d.status !== 'inactive').length} On the Road
+                </span>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <input
