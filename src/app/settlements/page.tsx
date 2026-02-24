@@ -82,6 +82,17 @@ const parseDateHelper = (dateStr: string) => {
 };
 // End Date Helper
 
+const formatLocationShort = (loc: string) => {
+  if (!loc) return '-';
+  const match = loc.match(/([a-zA-Z]{2})\s*(\d{5}(?:[- ]\d{4})?)?\s*$/);
+  if (match) {
+    return `${match[1].toUpperCase()} ${match[2] || ''}`.trim();
+  }
+  // Fallback
+  const parts = loc.split(',');
+  return parts.length > 1 ? parts[parts.length - 1].trim() : loc;
+};
+
 const TABLE_COLUMNS = [
   { id: 'loadNumber', label: 'Load #' },
   { id: 'driver', label: 'Driver' },
@@ -92,7 +103,6 @@ const TABLE_COLUMNS = [
   { id: 'invoiceAmount', label: 'Invoice Amt' },
   { id: 'totalPay', label: 'Total Pay' },
   { id: 'advance', label: 'Advance' },
-  { id: 'attachments', label: 'Attachments' },
 ];
 
 export default function SettlementsPage() {
@@ -142,11 +152,40 @@ export default function SettlementsPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   const [activeTab, setActiveTab] = useState('loads');
   const [expenseFilter, setExpenseFilter] = useState<'all' | 'driver' | 'owner' | 'company'>('all');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(TABLE_COLUMNS.map(c => c.id)));
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   const [sortColumn, setSortColumn] = useState<'pickupDate' | 'deliveryDate' | 'driverName' | null>('pickupDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleGlobalSearch = async () => {
+    if (!searchQuery.trim() || !firestore) return;
+    setIsSearchingGlobal(true);
+    try {
+      const q = query(
+        collection(firestore, 'loads'),
+        where('loadNumber', '==', searchQuery.trim()),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        const load = snapshot.docs[0].data() as Load;
+        const pickupDate = parseDateHelper(load.pickupDate);
+        setSelectedWeek(startOfWeek(pickupDate, { weekStartsOn: 1 }));
+        setActiveTab('loads');
+      } else {
+        alert(`Load #${searchQuery.trim()} not found in any period.`);
+      }
+    } catch (e: any) {
+      console.error('Global search error:', e);
+      alert('Error searching for load: ' + (e.message || String(e)));
+    } finally {
+      setIsSearchingGlobal(false);
+    }
+  };
 
   const handleSortColumn = (column: 'pickupDate' | 'deliveryDate' | 'driverName') => {
     if (sortColumn === column) {
@@ -904,69 +943,68 @@ export default function SettlementsPage() {
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Weekly Settlement Wizard</h1>
-          <p className="text-muted-foreground text-lg">Input weekly loads and expenses to generate QBO-ready CSV files.</p>
+          <p className="text-muted-foreground sm:text-lg">Input weekly loads and expenses to generate QBO-ready CSV files.</p>
         </div>
 
-        {/* Week Picker */}
-        <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-xl border border-border/40">
-          <Button variant="ghost" size="icon" onClick={handlePrevWeek} className="h-8 w-8 rounded-lg">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" className="h-8 px-2 rounded-lg hover:bg-muted/50">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium text-sm tabular-nums">
-                    {format(weekStart, 'MMM d, yyyy')} - {format(weekEnd, 'MMM d, yyyy')}
-                  </span>
-                </div>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="center">
-              <CalendarComponent
-                mode="single"
-                selected={selectedWeek}
-                onSelect={handleDateSelect}
-                captionLayout="dropdown"
-                fromYear={new Date().getFullYear() - 10}
-                toYear={new Date().getFullYear()}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-          <Button variant="ghost" size="icon" onClick={handleNextWeek} className="h-8 w-8 rounded-lg">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="flex gap-2">
-          <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0} className="rounded-xl">
-            <FileDown className="mr-2 h-4 w-4" /> Export Invoices
-          </Button>
-          <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl">
-            <FileDown className="mr-2 h-4 w-4" /> Export Journal
-          </Button>
-
-          {activeTab === 'summary' && (
-            <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
-              <Download className="mr-2 h-4 w-4" /> Download All Statements
+        <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4">
+          {/* Week Picker */}
+          <div className="flex items-center gap-2 sm:gap-4 bg-muted/30 p-2 rounded-xl border border-border/40 w-full sm:w-auto justify-center">
+            <Button variant="ghost" size="icon" onClick={handlePrevWeek} className="h-8 w-8 rounded-lg">
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-          )}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" className="h-8 px-2 rounded-lg hover:bg-muted/50">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium text-sm tabular-nums">
+                      {format(weekStart, 'MMM d, yyyy')} - {format(weekEnd, 'MMM d, yyyy')}
+                    </span>
+                  </div>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="center">
+                <CalendarComponent
+                  mode="single"
+                  selected={selectedWeek}
+                  onSelect={handleDateSelect}
+                  captionLayout="dropdown"
+                  fromYear={new Date().getFullYear() - 10}
+                  toYear={new Date().getFullYear()}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <Button variant="ghost" size="icon" onClick={handleNextWeek} className="h-8 w-8 rounded-lg">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
 
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+            <Button onClick={handleExportInvoices} variant="outline" disabled={!loads || loads.length === 0} className="rounded-xl flex-1 sm:flex-none">
+              <FileDown className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Export Invoices</span><span className="sm:hidden">Invoices</span>
+            </Button>
+            <Button onClick={handleExportJournal} variant="outline" disabled={settlementSummary.length === 0} className="rounded-xl flex-1 sm:flex-none">
+              <FileDown className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Export Journal</span><span className="sm:hidden">Journal</span>
+            </Button>
 
+            {activeTab === 'summary' && (
+              <Button onClick={handleDownloadBatch} variant="default" className="rounded-xl flex-1 sm:flex-none w-full sm:w-auto mt-2 sm:mt-0" disabled={settlementSummary.length === 0 && ownerSettlementSummary.length === 0}>
+                <Download className="mr-2 h-4 w-4" /> Download All Statements
+              </Button>
+            )}
+          </div>
         </div>
-
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-6 h-12 p-1 bg-muted/30 rounded-xl border border-border/40">
-          <TabsTrigger value="loads" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Loads ({loads?.length || 0})</TabsTrigger>
-          <TabsTrigger value="expenses" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Expenses ({expenses?.length || 0})</TabsTrigger>
-          <TabsTrigger value="summary" className="h-full rounded-lg px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm">Settlement Summary</TabsTrigger>
+        <TabsList className="mb-6 h-auto flex-wrap p-1 bg-muted/30 rounded-xl border border-border/40">
+          <TabsTrigger value="loads" className="h-10 rounded-lg px-4 sm:px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1 sm:flex-none">Loads ({loads?.length || 0})</TabsTrigger>
+          <TabsTrigger value="expenses" className="h-10 rounded-lg px-4 sm:px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1 sm:flex-none">Expenses ({expenses?.length || 0})</TabsTrigger>
+          <TabsTrigger value="summary" className="h-10 rounded-lg px-4 sm:px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm flex-1 sm:flex-none mt-1 sm:mt-0">Settlement Summary</TabsTrigger>
         </TabsList>
 
         {/* Loads Tab */}
@@ -981,20 +1019,27 @@ export default function SettlementsPage() {
               {/* Toolbar */}
               <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
                 {/* Search & Columns - Flexible */}
-                <div className="flex gap-2 flex-1 xl:flex-none">
-                  <div className="relative flex-1 sm:w-64">
+                <div className="flex gap-2 w-full xl:w-auto flex-col sm:flex-row">
+                  <div className="relative w-full sm:w-64">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search loads..."
+                      placeholder="Search for loads..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 h-9"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (/^[a-zA-Z0-9-]+$/.test(searchQuery.trim())) {
+                            handleGlobalSearch();
+                          }
+                        }
+                      }}
+                      className="pl-8 h-9 w-full"
                     />
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="rounded-lg h-9 px-3">
-                        <Columns className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Columns</span>
+                      <Button variant="outline" size="sm" className="rounded-lg h-9 px-3 w-full sm:w-auto justify-center">
+                        <Columns className="h-4 w-4 sm:mr-2" /> <span className="sm:inline">Columns</span>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[150px]">
@@ -1023,114 +1068,172 @@ export default function SettlementsPage() {
                 </div>
 
                 {/* Actions - Grouped */}
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
                   <input type="file" accept=".csv" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
-                  <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg h-9" title="Download Template">
+                  <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
                     <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleImportLoadsClick} className="rounded-lg h-9" title="Import CSV">
+                  <Button variant="outline" size="sm" onClick={handleImportLoadsClick} className="rounded-lg h-9 flex-1 sm:flex-none" title="Import CSV">
                     <Upload className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Import</span>
                   </Button>
-                  <Button onClick={handleAddLoad} size="sm" className="rounded-lg shadow-sm h-9">
-                    <PlusCircle className="mr-2 h-4 w-4" /> Add Load
+                  <Button onClick={handleAddLoad} size="sm" className="rounded-lg shadow-sm h-9 flex-1 sm:flex-none">
+                    <PlusCircle className="mr-2 h-4 w-4" /> <span className="whitespace-nowrap">Add Load</span>
                   </Button>
                 </div>
               </div>
             </div>
 
             <div className="flex-1 overflow-hidden relative">
-              <CardContent className="p-0 overflow-x-auto">
-                <Table style={{ minWidth: '1000px', width: '100%' }}>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent bg-muted/10">
-                      {TABLE_COLUMNS.map(column => visibleColumns.has(column.id) && (
-                        <TableHead
-                          key={column.id}
-                          className={`transition-colors duration-200 group ${column.id === 'loadNumber' ? 'pl-6' : ''
-                            } ${(column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') ? 'cursor-pointer hover:bg-muted/30' : ''}`}
-                          onClick={() => {
-                            if (column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') {
-                              handleSortColumn(column.id as 'pickupDate' | 'deliveryDate' | 'driverName');
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between h-full">
-                            <div className="flex items-center gap-1 w-full truncate">
-                              {column.label}
-                              {sortColumn === (column.id === 'driver' ? 'driverName' : column.id) && (
-                                <span className="ml-1 opacity-70">
-                                  {sortDirection === 'asc' ? '↑' : '↓'}
-                                </span>
+              <CardContent className="p-0 overflow-x-auto w-full">
+                <div className="min-w-[800px]">
+                  <Table className="w-full">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent bg-muted/10">
+                        {TABLE_COLUMNS.map(column => visibleColumns.has(column.id) && (
+                          <TableHead
+                            key={column.id}
+                            className={`transition-colors duration-200 group ${column.id === 'loadNumber' ? 'pl-6' : ''
+                              } ${(column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                            onClick={() => {
+                              if (column.id === 'pickupDate' || column.id === 'deliveryDate' || column.id === 'driverName') {
+                                handleSortColumn(column.id as 'pickupDate' | 'deliveryDate' | 'driverName');
+                              }
+                            }}
+                          >
+                            <div className="flex items-center justify-between h-full">
+                              <div className="flex items-center gap-1 w-full truncate">
+                                {column.label}
+                                {sortColumn === (column.id === 'driver' ? 'driverName' : column.id) && (
+                                  <span className="ml-1 opacity-70">
+                                    {sortDirection === 'asc' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </TableHead>
+                        ))}
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoading ? (
+                        <TableRow><TableCell colSpan={TABLE_COLUMNS.length + 1} className="h-24 text-center">Loading...</TableCell></TableRow>
+                      ) : filteredLoads.length > 0 ? (
+                        filteredLoads.map((load) => {
+                          const driver = driverMap.get(load.driverId);
+                          const isExpanded = expandedRows.has(load.id);
+                          return (
+                            <React.Fragment key={load.id}>
+                              <TableRow
+                                className="group hover:bg-muted/50 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setExpandedRows(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(load.id)) next.delete(load.id);
+                                    else next.add(load.id);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                {TABLE_COLUMNS.map(column => {
+                                  if (!visibleColumns.has(column.id)) return null;
+
+                                  return (
+                                    <TableCell key={`${load.id}-${column.id}`} className={`${column.id === 'loadNumber' ? 'pl-6 font-medium' : ''}`}>
+                                      {(() => {
+                                        switch (column.id) {
+                                          case 'loadNumber': return <span className="font-medium">{load.loadNumber}</span>;
+                                          case 'driver': return driver && (
+                                            <div className="flex flex-col">
+                                              <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
+                                            </div>
+                                          );
+                                          case 'pickupDate': return new Date(load.pickupDate).toLocaleDateString();
+                                          case 'deliveryDate': return new Date(load.deliveryDate).toLocaleDateString();
+                                          case 'pickupLocation': return <span className="text-sm text-foreground truncate block max-w-[120px]" title={load.pickupLocation}>{formatLocationShort(load.pickupLocation)}</span>;
+                                          case 'deliveryLocation': return <span className="text-sm text-foreground truncate block max-w-[120px]" title={load.deliveryLocation}>{formatLocationShort(load.deliveryLocation)}</span>;
+                                          case 'invoiceAmount': return formatCurrency(load.invoiceAmount);
+                                          case 'totalPay': return <span className="text-green-600 font-medium">{formatCurrency(calculateDriverPay(load, driver))}</span>;
+                                          case 'advance': return formatCurrency(load.advance || 0);
+                                          default: return null;
+                                        }
+                                      })()}
+                                    </TableCell>
+                                  );
+                                })}
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                        <span className="sr-only">Toggle menu</span>
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                      <DropdownMenuItem onClick={() => handleEditLoad(load)}>Edit</DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleDeleteLoad(load.id)} className="text-red-600">Delete</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && (
+                                <TableRow className="bg-muted/10 hover:bg-muted/10">
+                                  <TableCell colSpan={TABLE_COLUMNS.length + 1} className="p-0 border-b">
+                                    <div className="p-4 pl-6 flex flex-col gap-4 animate-in slide-in-from-top-2">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pick Up Location</p>
+                                          <p className="text-sm">{load.pickupLocation || '-'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Delivery Location</p>
+                                          <p className="text-sm">{load.deliveryLocation || '-'}</p>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Attachments</p>
+                                        <div className="flex gap-2 items-center">
+                                          {load.rateConfirmationUrl ? (
+                                            <Button variant="outline" size="sm" className="h-8">
+                                              <Paperclip className="h-3 w-3 mr-2" /> Rate Confirmation
+                                            </Button>
+                                          ) : (
+                                            <span className="text-sm text-muted-foreground">No attachments</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={TABLE_COLUMNS.length + 1} className="h-40 text-center text-muted-foreground">
+                            <div className="flex flex-col items-center justify-center gap-3">
+                              <p>No loads found in this period.</p>
+                              {(searchQuery.trim() && /^[a-zA-Z0-9-]+$/.test(searchQuery.trim())) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="shadow-sm"
+                                  onClick={handleGlobalSearch}
+                                  disabled={isSearchingGlobal}
+                                >
+                                  {isSearchingGlobal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                                  Search all periods for Load #{searchQuery.trim()}
+                                </Button>
                               )}
                             </div>
-                          </div>
-                        </TableHead>
-                      ))}
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
-                      <TableRow><TableCell colSpan={TABLE_COLUMNS.length + 1} className="h-24 text-center">Loading...</TableCell></TableRow>
-                    ) : filteredLoads.length > 0 ? (
-                      filteredLoads.map((load) => {
-                        const driver = driverMap.get(load.driverId);
-                        return (
-                          <TableRow key={load.id} className="group hover:bg-muted/50 transition-colors">
-                            {TABLE_COLUMNS.map(column => {
-                              if (!visibleColumns.has(column.id)) return null;
-
-                              return (
-                                <TableCell key={`${load.id}-${column.id}`} className={`${column.id === 'loadNumber' ? 'pl-6 font-medium' : ''}`}>
-                                  {(() => {
-                                    switch (column.id) {
-                                      case 'loadNumber': return <span className="font-medium">{load.loadNumber}</span>;
-                                      case 'driver': return driver && (
-                                        <div className="flex flex-col">
-                                          <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
-                                        </div>
-                                      );
-                                      case 'pickupDate': return new Date(load.pickupDate).toLocaleDateString();
-                                      case 'deliveryDate': return new Date(load.deliveryDate).toLocaleDateString();
-                                      case 'pickupLocation': return <span className="text-sm text-muted-foreground truncate block max-w-[180px]" title={load.pickupLocation}>{load.pickupLocation}</span>;
-                                      case 'deliveryLocation': return <span className="text-sm text-muted-foreground truncate block max-w-[180px]" title={load.deliveryLocation}>{load.deliveryLocation}</span>;
-                                      case 'invoiceAmount': return formatCurrency(load.invoiceAmount);
-                                      case 'totalPay': return <span className="text-green-600 font-medium">{formatCurrency(calculateDriverPay(load, driver))}</span>;
-                                      case 'advance': return formatCurrency(load.advance || 0);
-                                      case 'attachments': return (
-                                        <div className="flex gap-1">
-                                          {load.rateConfirmationUrl && <Button variant="ghost" size="icon" className="h-6 w-6"><Paperclip className="h-3 w-3" /></Button>}
-                                        </div>
-                                      );
-                                      default: return null;
-                                    }
-                                  })()}
-                                </TableCell>
-                              );
-                            })}
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                    <span className="sr-only">Toggle menu</span>
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem onClick={() => handleEditLoad(load)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleDeleteLoad(load.id)} className="text-red-600">Delete</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    ) : (
-                      <TableRow><TableCell colSpan={TABLE_COLUMNS.length + 1} className="h-32 text-center text-muted-foreground">No loads found.</TableCell></TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </div>
           </Card>
@@ -1147,12 +1250,12 @@ export default function SettlementsPage() {
 
               {/* Toolbar */}
               <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
-                <div className="flex p-1 bg-muted/50 rounded-lg border border-border/50">
+                <div className="flex flex-wrap p-1 bg-muted/50 rounded-lg border border-border/50 gap-1 w-full sm:w-auto">
                   <Button
                     variant={expenseFilter === 'all' ? 'secondary' : 'ghost'}
                     size="sm"
                     onClick={() => setExpenseFilter('all')}
-                    className="h-7 text-xs px-3"
+                    className="h-8 sm:h-7 text-xs px-3 flex-1 sm:flex-none"
                   >
                     All
                   </Button>
@@ -1160,7 +1263,7 @@ export default function SettlementsPage() {
                     variant={expenseFilter === 'driver' ? 'secondary' : 'ghost'}
                     size="sm"
                     onClick={() => setExpenseFilter('driver')}
-                    className="h-7 text-xs px-3"
+                    className="h-8 sm:h-7 text-xs px-3 flex-1 sm:flex-none"
                   >
                     Drivers
                   </Button>
@@ -1168,7 +1271,7 @@ export default function SettlementsPage() {
                     variant={expenseFilter === 'owner' ? 'secondary' : 'ghost'}
                     size="sm"
                     onClick={() => setExpenseFilter('owner')}
-                    className="h-7 text-xs px-3"
+                    className="h-8 sm:h-7 text-xs px-3 flex-1 sm:flex-none"
                   >
                     Owners
                   </Button>
@@ -1176,95 +1279,96 @@ export default function SettlementsPage() {
                     variant={expenseFilter === 'company' ? 'secondary' : 'ghost'}
                     size="sm"
                     onClick={() => setExpenseFilter('company')}
-                    className="h-7 text-xs px-3"
+                    className="h-8 sm:h-7 text-xs px-3 flex-1 sm:flex-none"
                   >
                     Company
                   </Button>
                 </div>
                 {/* Actions - Grouped */}
-                <div className="flex flex-wrap gap-2 flex-1 xl:justify-end">
+                <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
                   <input type="file" accept=".csv" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
-                  <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg h-9" title="Download Template">
+                  <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
                     <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleImportExpensesClick} disabled={isImporting} className="rounded-lg h-9" title="Import CSV">
+                  <Button variant="outline" size="sm" onClick={handleImportExpensesClick} disabled={isImporting} className="rounded-lg h-9 flex-1 sm:flex-none" title="Import CSV">
                     <Upload className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Import</span>
                   </Button>
-                  <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm h-9">
-                    <PlusCircle className="mr-2 h-4 w-4" /> Add Expense
+                  <Button onClick={handleAddExpense} size="sm" className="rounded-lg shadow-sm h-9 flex-1 sm:flex-none">
+                    <PlusCircle className="mr-2 h-4 w-4" /> <span className="whitespace-nowrap">Add Expense</span>
                   </Button>
                 </div>
               </div>
             </div>
-
             <div className="flex-1 overflow-hidden relative">
-              <CardContent className="p-0 overflow-x-auto">
-                <Table style={{ minWidth: '800px', width: '100%' }}>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent bg-muted/10">
-                      <TableHead className="pl-6">Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Expense Type</TableHead>
-                      <TableHead>Bill To</TableHead>
-                      <TableHead>Driver</TableHead>
-                      <TableHead>Unit ID</TableHead>
-                      <TableHead>Gallons</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
-                      <TableRow><TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell></TableRow>
-                    ) : filteredExpenses.length > 0 ? (
-                      filteredExpenses.map((expense) => (
-                        <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
-                          <TableCell className="pl-6">{new Date(expense.date).toLocaleDateString()}</TableCell>
-                          <TableCell className="font-medium">{expense.description}</TableCell>
-                          <TableCell><Badge variant="outline" className="rounded-md capitalize">{expense.expenseCategory || 'Fuel'}</Badge></TableCell>
-                          <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'} className="rounded-md capitalize">{expense.type}</Badge></TableCell>
-                          <TableCell>
-                            {(() => {
-                              if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
-                              const d = driverMap.get(expense.driverId);
-                              return d ? toTitleCase(`${d.firstName} ${d.lastName}`) : <span className="text-muted-foreground">-</span>;
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              // Prefer expense.unitId, fall back to driver's unitId
-                              if (expense.unitId) return <span className="font-mono text-xs">{expense.unitId}</span>;
-                              if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
-                              const d = driverMap.get(expense.driverId);
-                              return d && d.unitId ? <span className="font-mono text-xs">{d.unitId}</span> : <span className="text-muted-foreground">-</span>;
-                            })()}
-                          </TableCell>
-                          <TableCell>{expense.gallons ? expense.gallons : '-'}</TableCell>
-                          <TableCell>{expense.locationState || '-'}</TableCell>
-                          <TableCell>{formatCurrency(expense.amount)}</TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                  <span className="sr-only">Toggle menu</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => handleEditExpense(expense)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDeleteExpense(expense.id)} className="text-red-600">Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No expenses recorded.</TableCell></TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              <CardContent className="p-0 overflow-x-auto w-full">
+                <div className="min-w-[800px]">
+                  <Table className="w-full">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent bg-muted/10">
+                        <TableHead className="pl-6">Date</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Expense Type</TableHead>
+                        <TableHead>Bill To</TableHead>
+                        <TableHead>Driver</TableHead>
+                        <TableHead>Unit ID</TableHead>
+                        <TableHead>Gallons</TableHead>
+                        <TableHead>State</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead className="w-[80px]"><span className="sr-only">Actions</span></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoading ? (
+                        <TableRow><TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell></TableRow>
+                      ) : filteredExpenses.length > 0 ? (
+                        filteredExpenses.map((expense) => (
+                          <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
+                            <TableCell className="pl-6">{new Date(expense.date).toLocaleDateString()}</TableCell>
+                            <TableCell className="font-medium">{expense.description}</TableCell>
+                            <TableCell><Badge variant="outline" className="rounded-md capitalize">{expense.expenseCategory || 'Fuel'}</Badge></TableCell>
+                            <TableCell><Badge variant={expense.type === 'company' ? 'secondary' : 'outline'} className="rounded-md capitalize">{expense.type}</Badge></TableCell>
+                            <TableCell>
+                              {(() => {
+                                if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
+                                const d = driverMap.get(expense.driverId);
+                                return d ? toTitleCase(`${d.firstName} ${d.lastName}`) : <span className="text-muted-foreground">-</span>;
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                // Prefer expense.unitId, fall back to driver's unitId
+                                if (expense.unitId) return <span className="font-mono text-xs">{expense.unitId}</span>;
+                                if (!expense.driverId) return <span className="text-muted-foreground">-</span>;
+                                const d = driverMap.get(expense.driverId);
+                                return d && d.unitId ? <span className="font-mono text-xs">{d.unitId}</span> : <span className="text-muted-foreground">-</span>;
+                              })()}
+                            </TableCell>
+                            <TableCell>{expense.gallons ? expense.gallons : '-'}</TableCell>
+                            <TableCell>{expense.locationState || '-'}</TableCell>
+                            <TableCell>{formatCurrency(expense.amount)}</TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button aria-haspopup="true" size="icon" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Toggle menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => handleEditExpense(expense)}>Edit</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDeleteExpense(expense.id)} className="text-red-600">Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No expenses recorded.</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </div>
           </Card>
