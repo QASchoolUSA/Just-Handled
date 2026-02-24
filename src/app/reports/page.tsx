@@ -60,22 +60,14 @@ export default function ReportsPage() {
     const toStr = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '';
 
     const loadsQuery = useMemoFirebase(() => {
-        if (!firestore || !fromStr || !toStr) return null;
-        return query(
-            collection(firestore, 'loads'),
-            where('deliveryDate', '>=', fromStr),
-            where('deliveryDate', '<=', toStr)
-        );
-    }, [firestore, fromStr, toStr]);
+        if (!firestore) return null;
+        return collection(firestore, 'loads');
+    }, [firestore]);
 
     const expensesQuery = useMemoFirebase(() => {
-        if (!firestore || !fromStr || !toStr) return null;
-        return query(
-            collection(firestore, 'expenses'),
-            where('date', '>=', fromStr),
-            where('date', '<=', toStr)
-        );
-    }, [firestore, fromStr, toStr]);
+        if (!firestore) return null;
+        return collection(firestore, 'expenses');
+    }, [firestore]);
 
     // Drivers & Owners (Fetch all)
     const driversQuery = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
@@ -134,10 +126,23 @@ export default function ReportsPage() {
     //
     // Let's implement it using existing hook.
 
+    // --- Client-Side Filtering ---
+    const filteredLoads = useMemo(() => {
+        if (!loads) return [];
+        if (!fromStr || !toStr) return loads;
+        return loads.filter(l => l.deliveryDate >= fromStr && l.deliveryDate <= toStr);
+    }, [loads, fromStr, toStr]);
+
+    const filteredExpenses = useMemo(() => {
+        if (!expenses) return [];
+        if (!fromStr || !toStr) return expenses;
+        return expenses.filter(e => e.date >= fromStr && e.date <= toStr);
+    }, [expenses, fromStr, toStr]);
+
     const { settlementSummary } = useSettlementCalculations(
         drivers || [],
-        loads || [],
-        expenses || [],
+        filteredLoads,
+        filteredExpenses,
         owners || [],
         dateRange?.from || new Date(),
         dateRange?.to || new Date(),
@@ -148,14 +153,14 @@ export default function ReportsPage() {
 
     // --- Handlers ---
     const handleInvoiceExport = () => {
-        if (!loads) return;
-        const csv = generateInvoiceCSV(loads, accounts);
+        if (!filteredLoads) return;
+        const csv = generateInvoiceCSV(filteredLoads, accounts);
         downloadCsv(csv, `Invoices_${fromStr}_to_${toStr}.csv`);
     };
 
     const handleJournalExport = () => {
-        if (!loads || !settlementSummary) return;
-        const csv = generateJournalCSV(loads, settlementSummary, accounts, dateRange?.to || new Date());
+        if (!filteredLoads || !settlementSummary) return;
+        const csv = generateJournalCSV(filteredLoads, settlementSummary, accounts, dateRange?.to || new Date());
         downloadCsv(csv, `Journal_${fromStr}_to_${toStr}.csv`);
     };
 
@@ -181,49 +186,71 @@ export default function ReportsPage() {
                         </Button>
                     ))}
                     <div className="w-[1px] h-6 bg-border mx-1" />
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant={activePreset === "custom" ? "secondary" : "ghost"}
-                                size="sm"
-                                className={cn(
-                                    "gap-2",
-                                    activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-                                )}
-                            >
-                                <CalendarIcon className="h-4 w-4" />
-                                {activePreset === "custom" ? (
-                                    dateRange?.from ? (
-                                        dateRange.to ? (
-                                            <>
-                                                {format(dateRange.from, "LLL dd, y")} -{" "}
-                                                {format(dateRange.to, "LLL dd, y")}
-                                            </>
-                                        ) : (
-                                            format(dateRange.from, "LLL dd, y")
-                                        )
-                                    ) : (
-                                        "Custom Range"
-                                    )
-                                ) : (
-                                    "Custom"
-                                )}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                                initialFocus
-                                mode="range"
-                                defaultMonth={dateRange?.from}
-                                selected={dateRange}
-                                onSelect={(range) => {
-                                    setDateRange(range);
-                                    setActivePreset("custom");
-                                }}
-                                numberOfMonths={2}
-                            />
-                        </PopoverContent>
-                    </Popover>
+
+                    <div className="flex items-center gap-2">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={activePreset === "custom" ? "secondary" : "ghost"}
+                                    size="sm"
+                                    className={cn(
+                                        "w-[140px] justify-start text-left font-normal",
+                                        activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange?.from ? format(dateRange.from, "LLL dd, y") : <span>From</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                    mode="single"
+                                    selected={dateRange?.from}
+                                    onSelect={(date) => {
+                                        setDateRange(prev => ({ from: date, to: prev?.to }));
+                                        setActivePreset("custom");
+                                    }}
+                                    initialFocus
+                                    captionLayout="dropdown"
+                                    fromYear={2020}
+                                    toYear={new Date().getFullYear() + 5}
+                                />
+                            </PopoverContent>
+                        </Popover>
+
+                        <span className="text-muted-foreground text-sm">to</span>
+
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={activePreset === "custom" ? "secondary" : "ghost"}
+                                    size="sm"
+                                    className={cn(
+                                        "w-[140px] justify-start text-left font-normal",
+                                        activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange?.to ? format(dateRange.to, "LLL dd, y") : <span>To</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                    mode="single"
+                                    selected={dateRange?.to}
+                                    onSelect={(date) => {
+                                        setDateRange(prev => ({ from: prev?.from, to: date }));
+                                        setActivePreset("custom");
+                                    }}
+                                    initialFocus
+                                    captionLayout="dropdown"
+                                    fromYear={2020}
+                                    toYear={new Date().getFullYear() + 5}
+                                    disabled={(date) => dateRange?.from ? date < startOfDay(dateRange.from) : false}
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
                 </div>
             </div>
 
@@ -242,11 +269,11 @@ export default function ReportsPage() {
                             <CardDescription>
                                 Export all load invoices for the selected period ({fromStr} to {toStr}).
                                 <br />
-                                Found {loads?.length || 0} invoices.
+                                Found {filteredLoads.length} invoices.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <Button className="w-full" onClick={handleInvoiceExport} disabled={!loads || loads.length === 0}>
+                            <Button className="w-full" onClick={handleInvoiceExport} disabled={filteredLoads.length === 0}>
                                 <Download className="mr-2 h-4 w-4" />
                                 Download CSV
                             </Button>
@@ -266,7 +293,7 @@ export default function ReportsPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <Button className="w-full" variant="outline" onClick={handleJournalExport} disabled={!loads || loads.length === 0}>
+                            <Button className="w-full" variant="outline" onClick={handleJournalExport} disabled={filteredLoads.length === 0}>
                                 <Download className="mr-2 h-4 w-4" />
                                 Download CSV
                             </Button>
@@ -275,21 +302,7 @@ export default function ReportsPage() {
                 </div>
             )}
 
-            <div className="grid md:grid-cols-2 gap-6 mt-6">
-                <Link href="/reports/profit-loss" className="block h-full">
-                    <Card className="h-full hover:bg-muted/50 transition-colors">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <FileText className="h-5 w-5 text-purple-600" />
-                                Profit & Loss Statement
-                            </CardTitle>
-                            <CardDescription>
-                                View detailed Income Statement with breakdown of Revenue, COGS, and Expenses.
-                            </CardDescription>
-                        </CardHeader>
-                    </Card>
-                </Link>
-            </div>
+
         </div>
     );
 }

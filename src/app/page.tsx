@@ -38,7 +38,6 @@ export default function DashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   // Calculate date range based on selected period
   const dateRange = useMemo(() => {
@@ -81,15 +80,13 @@ export default function DashboardPage() {
   // Server-side Query Configurations
   const loadsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    const startStr = format(dateRange.start, 'yyyy-MM-dd');
-    return query(collection(firestore, 'loads'), where('pickupDate', '>=', startStr));
-  }, [firestore, dateRange]);
+    return collection(firestore, 'loads');
+  }, [firestore]);
 
   const expensesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    const startStr = format(dateRange.start, 'yyyy-MM-dd');
-    return query(collection(firestore, 'expenses'), where('date', '>=', startStr));
-  }, [firestore, dateRange]);
+    return collection(firestore, 'expenses');
+  }, [firestore]);
 
   // Drivers we typically fetch all because they are reference data (and list is small)
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
@@ -250,44 +247,57 @@ export default function DashboardPage() {
           </Tabs>
 
           {selectedPeriod === 'custom' && (
-            <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="rounded-xl">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {customStartDate && customEndDate
-                    ? `${format(customStartDate, 'MMM d')} - ${format(customEndDate, 'MMM d, yyyy')}`
-                    : 'Pick dates'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <div className="flex flex-col gap-4 p-4">
-                  <div>
-                    <p className="text-sm font-medium mb-2">Start Date</p>
-                    <Calendar
-                      mode="single"
-                      selected={customStartDate}
-                      onSelect={setCustomStartDate}
-                      disabled={(date) => customEndDate ? date > customEndDate : false}
-                    />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium mb-2">End Date</p>
-                    <Calendar
-                      mode="single"
-                      selected={customEndDate}
-                      onSelect={setCustomEndDate}
-                      disabled={(date) => customStartDate ? date < customStartDate : false}
-                    />
-                  </div>
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
                   <Button
-                    onClick={() => setIsDatePickerOpen(false)}
-                    disabled={!customStartDate || !customEndDate}
+                    variant="outline"
+                    className="w-[140px] justify-start text-left font-normal rounded-xl shadow-sm"
                   >
-                    Apply
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customStartDate ? format(customStartDate, "LLL dd, yyyy") : <span>Start</span>}
                   </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customStartDate}
+                    onSelect={setCustomStartDate}
+                    initialFocus
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear() + 5}
+                    disabled={(date) => customEndDate ? date > customEndDate : false}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <span className="text-muted-foreground text-sm">to</span>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-[140px] justify-start text-left font-normal rounded-xl shadow-sm"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customEndDate ? format(customEndDate, "LLL dd, yyyy") : <span>End</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customEndDate}
+                    onSelect={setCustomEndDate}
+                    initialFocus
+                    captionLayout="dropdown"
+                    fromYear={2020}
+                    toYear={new Date().getFullYear() + 5}
+                    disabled={(date) => customStartDate ? date < startOfDay(customStartDate) : false}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
           )}
 
           <p className="text-sm text-muted-foreground">

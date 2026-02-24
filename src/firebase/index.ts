@@ -3,7 +3,7 @@
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, initializeFirestore, persistentLocalCache } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 
@@ -33,10 +33,25 @@ export function initializeFirebase() {
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {
+  let firestore;
+
+  if (typeof window !== 'undefined') {
+    try {
+      firestore = initializeFirestore(firebaseApp, {
+        localCache: persistentLocalCache()
+      });
+    } catch (e) {
+      // Fallback if already initialized by another hot module reload
+      firestore = getFirestore(firebaseApp);
+    }
+  } else {
+    firestore = getFirestore(firebaseApp);
+  }
+
   return {
     firebaseApp,
     auth: getAuth(firebaseApp),
-    firestore: getFirestore(firebaseApp),
+    firestore,
     functions: getFunctions(firebaseApp, 'us-central1'),
     storage: getStorage(firebaseApp)
   };

@@ -6,7 +6,7 @@ import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Colu
 import { Button } from '@/components/ui/button';
 import { useSettlementCalculations } from '@/hooks/use-settlement-calculations';
 import { SettlementCard } from '@/components/settlement-card';
-import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, parseISO, parse } from 'date-fns';
+import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, parseISO, parse, isWithinInterval } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -124,17 +124,16 @@ export default function SettlementsPage() {
 
   // --- Firestore Queries (For Reads with Date Filtering) ---
 
-  // --- Firestore Queries (For Reads with Date Filtering) ---
-  // DEBUGGING: FETCH ALL LOADS (Filters Disabled)
+  // --- Firestore Queries (Client-Side Filtering) ---
   const loadsQuery = useMemoFirebase(() => {
     if (!loadsCollectionRef) return null;
-    return query(loadsCollectionRef, where('pickupDate', '>=', weekStartStr), where('pickupDate', '<=', weekEndStr));
-  }, [loadsCollectionRef, weekStartStr, weekEndStr]);
+    return query(loadsCollectionRef);
+  }, [loadsCollectionRef]);
 
   const expensesQuery = useMemoFirebase(() => {
     if (!expensesCollectionRef) return null;
-    return query(expensesCollectionRef, where('date', '>=', weekStartStr), where('date', '<=', weekEndStr));
-  }, [expensesCollectionRef, weekStartStr, weekEndStr]);
+    return query(expensesCollectionRef);
+  }, [expensesCollectionRef]);
 
   const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
   const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQuery);
@@ -226,9 +225,8 @@ export default function SettlementsPage() {
     return loads
       .filter(load => {
         // Date Filter: pickupDate must be within selected week
-        // Server side filtering handles this now
-        // const loadDate = parseDateHelper(load.pickupDate);
-        // if (!isWithinInterval(loadDate, weekInterval)) return false;
+        const loadDate = parseDateHelper(load.pickupDate);
+        if (!isWithinInterval(loadDate, weekInterval)) return false;
 
         // Search Query Filter
         if (!searchQuery.trim()) return true;
@@ -274,9 +272,8 @@ export default function SettlementsPage() {
 
     return expenses.filter(expense => {
       // Date Filter
-      // Server side filtering handles this now
-      // const expenseDate = new Date(expense.date);
-      // if (!isWithinInterval(expenseDate, weekInterval)) return false;
+      const expenseDate = new Date(expense.date + 'T00:00:00');
+      if (!isWithinInterval(expenseDate, weekInterval)) return false;
 
       // Type Filter
       if (expenseFilter !== 'all') {
@@ -469,7 +466,7 @@ export default function SettlementsPage() {
     settlementSummary.forEach(summary => {
       if (summary.grossPay > 0) {
         journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.driverPayExpense, Debits: fmt(summary.grossPay), Credits: '', Name: summary.driverName, Description: `Gross pay for ${summary.driverName}` });
-        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
+        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accrued Driver Pay', Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
         journalNo++;
       }
 
@@ -487,7 +484,7 @@ export default function SettlementsPage() {
         }
 
         if (creditAccount) { // Only create entry if we have a defined credit account
-          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
+          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accrued Driver Pay', Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
           journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: creditAccount, Debits: '', Credits: fmt(deduction.amount), Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
           journalNo++;
         }

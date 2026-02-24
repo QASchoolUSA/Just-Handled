@@ -13,6 +13,7 @@ import {
   Moon,
   FileText,
   Landmark,
+  PieChart,
 } from 'lucide-react';
 import { useTheme } from "next-themes"
 
@@ -72,6 +73,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/document-center', label: 'Document Center', icon: FileText },
     { href: '/factoring', label: 'Factoring', icon: Landmark },
     { href: '/reports', label: 'Reports', icon: FileText },
+    { href: '/profit-loss', label: 'Profit & Loss', icon: PieChart },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 

@@ -22,33 +22,40 @@ import Link from "next/link";
 export default function ProfitLossPage() {
     const firestore = useFirestore();
 
-    // --- Date State ---
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: startOfDay(subMonths(new Date(), 1)),
         to: endOfDay(new Date())
     });
+    const [activePreset, setActivePreset] = useState<string>("1M");
+
+    // --- Presets ---
+    const presets = [
+        { label: "1 Month", value: "1M", months: 1 },
+        { label: "3 Months", value: "3M", months: 3 },
+        { label: "6 Months", value: "6M", months: 6 },
+        { label: "12 Months", value: "12M", months: 12 },
+    ];
+
+    const handlePresetClick = (months: number, label: string) => {
+        const to = new Date();
+        const from = subMonths(to, months);
+        setDateRange({ from: startOfDay(from), to: endOfDay(to) });
+        setActivePreset(label);
+    };
 
     // --- Data Fetching ---
     const fromStr = dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '';
     const toStr = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '';
 
     const loadsQuery = useMemoFirebase(() => {
-        if (!firestore || !fromStr || !toStr) return null;
-        return query(
-            collection(firestore, 'loads'),
-            where('deliveryDate', '>=', fromStr),
-            where('deliveryDate', '<=', toStr)
-        );
-    }, [firestore, fromStr, toStr]);
+        if (!firestore) return null;
+        return collection(firestore, 'loads');
+    }, [firestore]);
 
     const expensesQuery = useMemoFirebase(() => {
-        if (!firestore || !fromStr || !toStr) return null;
-        return query(
-            collection(firestore, 'expenses'),
-            where('date', '>=', fromStr),
-            where('date', '<=', toStr)
-        );
-    }, [firestore, fromStr, toStr]);
+        if (!firestore) return null;
+        return collection(firestore, 'expenses');
+    }, [firestore]);
 
     const driversQuery = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
     const ownersQuery = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
@@ -60,14 +67,27 @@ export default function ProfitLossPage() {
 
     const loading = loadsLoading || expensesLoading || driversLoading || ownersLoading;
 
+    // --- Client-Side Filtering ---
+    const filteredLoads = useMemo(() => {
+        if (!loads) return [];
+        if (!fromStr || !toStr) return loads;
+        return loads.filter(l => l.deliveryDate >= fromStr && l.deliveryDate <= toStr);
+    }, [loads, fromStr, toStr]);
+
+    const filteredExpenses = useMemo(() => {
+        if (!expenses) return [];
+        if (!fromStr || !toStr) return expenses;
+        return expenses.filter(e => e.date >= fromStr && e.date <= toStr);
+    }, [expenses, fromStr, toStr]);
+
     // --- Calculations ---
     const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
 
     // Use settlement calculations to get accurate driver pay
     const { settlementSummary } = useSettlementCalculations(
         drivers || [],
-        loads || [],
-        expenses || [],
+        filteredLoads,
+        filteredExpenses,
         owners || [],
         dateRange?.from || new Date(),
         dateRange?.to || new Date(),
@@ -75,17 +95,17 @@ export default function ProfitLossPage() {
     );
 
     const metrics = useMemo(() => {
-        if (!loads || !expenses || !settlementSummary) return null;
+        if (!filteredLoads || !filteredExpenses || !settlementSummary) return null;
 
         // 1. Gross Operating Revenue
-        const linehaulRevenue = loads.reduce((sum, load) => sum + (load.invoiceAmount || 0), 0);
+        const linehaulRevenue = filteredLoads.reduce((sum, load) => sum + (load.invoiceAmount || 0), 0);
         // Note: Fuel Surcharge, Detention etc are usually part of invoiceAmount in current model
         // We will list them as 0 if not separable, or assume invoiceAmount is total.
         const totalRevenue = linehaulRevenue;
 
         // 2. Cost of Goods Sold
         // Fuel
-        const fuelCost = expenses
+        const fuelCost = filteredExpenses
             .filter(e => e.expenseCategory === 'Fuel' || e.description?.toLowerCase().includes('fuel'))
             .reduce((sum, e) => sum + (e.amount || 0), 0);
 
@@ -93,13 +113,13 @@ export default function ProfitLossPage() {
         const driverWages = settlementSummary.reduce((sum, s) => sum + (s.grossPay || 0), 0);
 
         // Tolls
-        const tolls = expenses
+        const tolls = filteredExpenses
             .filter(e => e.expenseCategory === 'Tolls' || e.description?.toLowerCase().includes('toll'))
             .reduce((sum, e) => sum + (e.amount || 0), 0);
 
         // Dispatch Fees (if tracked separately in expenses or deductions)
         // Check expenses for 'Dispatch'
-        const dispatchFees = expenses
+        const dispatchFees = filteredExpenses
             .filter(e => e.description?.toLowerCase().includes('dispatch'))
             .reduce((sum, e) => sum + (e.amount || 0), 0);
 
@@ -113,7 +133,7 @@ export default function ProfitLossPage() {
         ];
 
         // Helper to sum expenses by strict or loose match
-        const sumByCategory = (cat: string) => expenses
+        const sumByCategory = (cat: string) => filteredExpenses
             .filter(e =>
                 (e.expenseCategory === cat) ||
                 (e.description?.toLowerCase().includes(cat.toLowerCase()))
@@ -139,15 +159,15 @@ export default function ProfitLossPage() {
         const totalOpEx = truckPayments + insurance + repairsMaint + tires + permits + dot + accounting + office + eld + parking;
 
         // 4. Factoring & Financial
-        const factoringFees = loads.reduce((sum, l) => sum + (l.factoringFee || 0), 0);
-        const transactionFees = loads.reduce((sum, l) => sum + (l.transactionFee || 0), 0);
+        const factoringFees = filteredLoads.reduce((sum, l) => sum + (l.factoringFee || 0), 0);
+        const transactionFees = filteredLoads.reduce((sum, l) => sum + (l.transactionFee || 0), 0);
         const totalFinancial = factoringFees + transactionFees;
 
         const operatingProfit = grossProfit - totalOpEx - totalFinancial;
         const netProfit = operatingProfit; // +/- Other Income if any
 
         // KPIS
-        const totalMiles = loads.reduce((sum, l) => sum + (l.miles || 0), 0);
+        const totalMiles = filteredLoads.reduce((sum, l) => sum + (l.miles || 0), 0);
         const rpm = totalMiles > 0 ? totalRevenue / totalMiles : 0;
         const cpm = totalMiles > 0 ? (totalCOGS + totalOpEx + totalFinancial) / totalMiles : 0;
         const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
@@ -193,7 +213,7 @@ export default function ProfitLossPage() {
             }
         };
 
-    }, [loads, expenses, settlementSummary]);
+    }, [filteredLoads, filteredExpenses, settlementSummary]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
     const formatPercent = (val: number) => `${val.toFixed(2)}%`;
@@ -201,48 +221,91 @@ export default function ProfitLossPage() {
     return (
         <div className="p-6 space-y-8 max-w-5xl mx-auto">
             <div className="flex flex-col gap-2">
-                <Link href="/reports" className="flex items-center text-sm text-muted-foreground hover:text-foreground mb-2">
-                    <ArrowLeft className="h-4 w-4 mr-1" /> Back to Reports
-                </Link>
+                {/* Remove Back to Reports Link */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">Profit & Loss Statement</h1>
-                        <p className="text-muted-foreground">{drivers?.length || 0} Drivers • {loads?.length || 0} Loads</p>
+                        <p className="text-muted-foreground">{drivers?.length || 0} Drivers • {filteredLoads.length} Loads</p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {dateRange?.from ? (
-                                        dateRange.to ? (
-                                            <>
-                                                {format(dateRange.from, "LLL dd, y")} -{" "}
-                                                {format(dateRange.to, "LLL dd, y")}
-                                            </>
-                                        ) : (
-                                            format(dateRange.from, "LLL dd, y")
-                                        )
-                                    ) : (
-                                        <span>Pick a date</span>
-                                    )}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="end">
-                                <Calendar
-                                    initialFocus
-                                    mode="range"
-                                    defaultMonth={dateRange?.from}
-                                    selected={dateRange}
-                                    onSelect={setDateRange}
-                                    numberOfMonths={2}
-                                    captionLayout="dropdown"
-                                    fromYear={2020}
-                                    toYear={new Date().getFullYear() + 1}
-                                />
-                            </PopoverContent>
-                        </Popover>
+                    <div className="flex items-center gap-2 bg-muted/20 p-1 rounded-lg border">
+                        {presets.map(preset => (
+                            <Button
+                                key={preset.value}
+                                variant={activePreset === preset.value ? "secondary" : "ghost"}
+                                size="sm"
+                                onClick={() => handlePresetClick(preset.months, preset.value)}
+                                className={cn(activePreset === preset.value && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90")}
+                            >
+                                {preset.label}
+                            </Button>
+                        ))}
+                        <div className="w-[1px] h-6 bg-border mx-1" />
+
+                        <div className="flex items-center gap-2">
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant={activePreset === "custom" ? "secondary" : "ghost"}
+                                        size="sm"
+                                        className={cn(
+                                            "w-[140px] justify-start text-left font-normal",
+                                            activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                                        )}
+                                    >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {dateRange?.from ? format(dateRange.from, "LLL dd, y") : <span>From</span>}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        mode="single"
+                                        selected={dateRange?.from}
+                                        onSelect={(date) => {
+                                            setDateRange(prev => ({ from: date, to: prev?.to }));
+                                            setActivePreset("custom");
+                                        }}
+                                        initialFocus
+                                        captionLayout="dropdown"
+                                        fromYear={2020}
+                                        toYear={new Date().getFullYear() + 5}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+
+                            <span className="text-muted-foreground text-sm">to</span>
+
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant={activePreset === "custom" ? "secondary" : "ghost"}
+                                        size="sm"
+                                        className={cn(
+                                            "w-[140px] justify-start text-left font-normal",
+                                            activePreset === "custom" && "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                                        )}
+                                    >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {dateRange?.to ? format(dateRange.to, "LLL dd, y") : <span>To</span>}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        mode="single"
+                                        selected={dateRange?.to}
+                                        onSelect={(date) => {
+                                            setDateRange(prev => ({ from: prev?.from, to: date }));
+                                            setActivePreset("custom");
+                                        }}
+                                        initialFocus
+                                        captionLayout="dropdown"
+                                        fromYear={2020}
+                                        toYear={new Date().getFullYear() + 5}
+                                        disabled={(date) => dateRange?.from ? date < startOfDay(dateRange.from) : false}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        </div>
                     </div>
                 </div>
             </div>
