@@ -28,9 +28,10 @@ import { Badge } from '@/components/ui/badge';
 import { LoadForm } from '@/components/load-form';
 import { ExpenseForm } from '@/components/expense-form';
 import type { Load, Driver, Expense, AccountSettings, Owner, SettlementSummary, OwnerSettlementSummary } from '@/lib/types';
-// import { generateSettlementPDF } from '@/lib/pdf-export'; // Dynamic import used instead
+// import { generateSettlementPDF } from '@/lib/exports/pdf-exports'; // Dynamic import used instead
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
 import { formatCurrency, downloadCsv, parseNumber, normalizeDateFormat, toTitleCase, calculateDriverPay } from '@/lib/utils';
+import { exportInvoicesAsCsv, exportJournalAsCsv } from '@/lib/exports/csv-exports';
 import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc, query, where, getDocs, limit, writeBatch } from 'firebase/firestore';
@@ -124,19 +125,28 @@ export default function SettlementsPage() {
 
   // --- Firestore Queries (For Reads with Date Filtering) ---
 
-  // --- Firestore Queries (Client-Side Filtering) ---
+  // --- Firestore Queries (Server-Side Filtering) ---
   const loadsQuery = useMemoFirebase(() => {
     if (!loadsCollectionRef) return null;
-    return query(loadsCollectionRef);
-  }, [loadsCollectionRef]);
+    return query(
+      loadsCollectionRef,
+      where('pickupDate', '>=', weekStartStr),
+      where('pickupDate', '<=', weekEndStr)
+    );
+  }, [loadsCollectionRef, weekStartStr, weekEndStr]);
 
   const expensesQuery = useMemoFirebase(() => {
     if (!expensesCollectionRef) return null;
-    return query(expensesCollectionRef);
-  }, [expensesCollectionRef]);
+    return query(
+      expensesCollectionRef,
+      where('date', '>=', weekStartStr),
+      where('date', '<=', weekEndStr + 'T23:59:59.999Z')
+    );
+  }, [expensesCollectionRef, weekStartStr, weekEndStr]);
 
   const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
   const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQuery);
+  // Optional: driver and owner collections are still fetched in full for mapping and forms, which is fine since they are small.
   const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
   const { data: owners, loading: ownersLoading } = useCollection<Owner>(ownersCollection);
 
@@ -427,73 +437,14 @@ export default function SettlementsPage() {
   );
 
 
-  // --- CSV Export ---
   const handleExportInvoices = () => {
     if (!loads) return;
-    const periodEndStr = format(weekEnd, 'yyyy-MM-dd');
-    const invoiceData = loads.map(load => ({
-      InvoiceNo: load.loadNumber,
-      Customer: accounts.factoringCompany,
-      'Invoice Date': periodEndStr,
-      'Due Date': periodEndStr,
-      'Item(Description)': 'Freight',
-      'Item(Amount)': load.invoiceAmount,
-      'Class': 'Revenue'
-    }));
-
-    const csv = Papa.unparse(invoiceData);
-    downloadCsv(csv, `QBO_Invoices_${periodEndStr}.csv`);
+    exportInvoicesAsCsv(loads, accounts, weekEnd);
   };
 
   const handleExportJournal = () => {
     if (!loads) return;
-    const periodEndStr = format(weekEnd, 'yyyy-MM-dd');
-    const journalEntries: any[] = [];
-    let journalNo = 1;
-
-    const fmt = (n: number) => n.toFixed(2);
-
-    // 1. Factoring Entry
-    const totalRevenue = loads.reduce((sum, l) => sum + l.invoiceAmount, 0);
-    const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
-
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringFees), Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringFees), Credits: '', Name: '', Description: 'Weekly factoring fees' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Receivable', Debits: '', Credits: fmt(totalRevenue), Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
-    journalNo++;
-
-    // 2. Driver Pay & Deductions Entries
-    settlementSummary.forEach(summary => {
-      if (summary.grossPay > 0) {
-        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.driverPayExpense, Debits: fmt(summary.grossPay), Credits: '', Name: summary.driverName, Description: `Gross pay for ${summary.driverName}` });
-        journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accrued Driver Pay', Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
-        journalNo++;
-      }
-
-      summary.deductions.forEach(deduction => {
-        if (deduction.amount <= 0) return;
-        let creditAccount = '';
-        if (deduction.description.toLowerCase().includes('insurance')) {
-          // Assuming insurance is paid out from a specific payable account
-        } else if (deduction.description.toLowerCase().includes('escrow')) {
-          creditAccount = accounts.escrowPayable;
-        } else if (deduction.description.toLowerCase().includes('fuel') || deduction.description.toLowerCase().includes('advance')) {
-          creditAccount = accounts.fuelAdvancesReceivable;
-        } else {
-          // Other deductions might go to a general 'Deductions Payable' or similar
-        }
-
-        if (creditAccount) { // Only create entry if we have a defined credit account
-          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accrued Driver Pay', Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
-          journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: creditAccount, Debits: '', Credits: fmt(deduction.amount), Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
-          journalNo++;
-        }
-      });
-    });
-
-
-    const csv = Papa.unparse(journalEntries);
-    downloadCsv(csv, `QBO_Journal_${periodEndStr}.csv`);
+    exportJournalAsCsv(loads, settlementSummary, accounts, weekEnd);
   };
 
 
@@ -907,7 +858,7 @@ export default function SettlementsPage() {
 
   const handleExportPDF = async (summary: SettlementSummary | OwnerSettlementSummary, start: Date, end: Date) => {
     try {
-      const { generateSettlementPDF } = await import('@/lib/pdf-export');
+      const { generateSettlementPDF } = await import('@/lib/exports/pdf-exports');
       generateSettlementPDF(summary, start, end);
     } catch (error) {
       console.error('Failed to load PDF generator:', error);
@@ -927,7 +878,7 @@ export default function SettlementsPage() {
     if (allSummaries.length > 50 && !confirm(`About to generate ${allSummaries.length} PDFs. This might take a moment. Continue?`)) return;
 
     try {
-      const { generateBatchZip } = await import('@/lib/pdf-export');
+      const { generateBatchZip } = await import('@/lib/exports/pdf-exports');
       await generateBatchZip(allSummaries, weekStart, weekEnd);
     } catch (error) {
       console.error('Batch download failed:', error);

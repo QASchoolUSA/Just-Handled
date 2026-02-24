@@ -142,6 +142,9 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
     const driver = drivers.find(d => d.unitId === values.unitId);
     const owner = owners.find(o => o.unitId === values.unitId);
 
+    const driverName = driver ? `${driver.firstName} ${driver.lastName}` : undefined;
+    const ownerName = owner ? owner.name : undefined;
+
     const dataToSave: Omit<Expense, 'id'> = {
       date: values.date.toISOString(),
       description: values.description,
@@ -153,6 +156,8 @@ export function ExpenseForm({ isOpen, onOpenChange, onSave, expense, drivers, ow
       type: values.type,
       driverId: values.type === 'driver' && driver ? driver.id : undefined,
       ownerId: values.type === 'owner' && owner ? owner.id : undefined,
+      driverName: values.type === 'driver' ? driverName : undefined,
+      ownerName: values.type === 'owner' ? ownerName : undefined,
       category: values.category,
     };
 

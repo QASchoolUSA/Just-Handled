@@ -15,7 +15,11 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { OwnerForm } from '@/components/owner-form';
+import dynamic from 'next/dynamic';
+
+const OwnerForm = dynamic(() => import('@/components/owner-form').then(mod => mod.OwnerForm), { ssr: false });
+const BlockingLoadingModal = dynamic(() => import('@/components/blocking-loading-modal'), { ssr: false });
+
 import type { Owner, Driver } from '@/lib/types';
 import { formatCurrency, toTitleCase } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -450,20 +454,7 @@ export default function OwnersPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Blocking Loading Modal */}
-            <Dialog open={isImporting} onOpenChange={() => { }}>
-                <DialogContent className="sm:max-w-[425px] [&>button]:hidden pointer-events-none">
-                    <DialogHeader>
-                        <DialogTitle className="flex flex-col items-center text-center gap-4 py-8">
-                            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                            <span className="text-xl">Importing Owners...</span>
-                        </DialogTitle>
-                        <DialogDescription className="text-center">
-                            Please wait while we process your file. Do not close this window.
-                        </DialogDescription>
-                    </DialogHeader>
-                </DialogContent>
-            </Dialog>
+            <BlockingLoadingModal isOpen={isImporting} title="Importing Owners..." />
         </div>
     );
 }

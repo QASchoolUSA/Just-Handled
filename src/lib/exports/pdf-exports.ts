@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { SettlementSummary, OwnerSettlementSummary } from '@/lib/types';
-import { formatCurrency } from './utils';
+import { formatCurrency } from '@/lib/utils';
 
 export const generateSettlementPDF = (settlement: SettlementSummary | OwnerSettlementSummary, payPeriodStart: Date, payPeriodEnd: Date) => {
     const { doc, fileName } = createSettlementDoc(settlement, payPeriodStart, payPeriodEnd);

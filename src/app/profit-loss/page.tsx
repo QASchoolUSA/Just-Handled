@@ -49,13 +49,27 @@ export default function ProfitLossPage() {
 
     const loadsQuery = useMemoFirebase(() => {
         if (!firestore) return null;
+        if (fromStr && toStr) {
+            return query(
+                collection(firestore, 'loads'),
+                where('deliveryDate', '>=', fromStr),
+                where('deliveryDate', '<=', toStr)
+            );
+        }
         return collection(firestore, 'loads');
-    }, [firestore]);
+    }, [firestore, fromStr, toStr]);
 
     const expensesQuery = useMemoFirebase(() => {
         if (!firestore) return null;
+        if (fromStr && toStr) {
+            return query(
+                collection(firestore, 'expenses'),
+                where('date', '>=', fromStr),
+                where('date', '<=', toStr + 'T23:59:59.999Z')
+            );
+        }
         return collection(firestore, 'expenses');
-    }, [firestore]);
+    }, [firestore, fromStr, toStr]);
 
     const driversQuery = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
     const ownersQuery = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);

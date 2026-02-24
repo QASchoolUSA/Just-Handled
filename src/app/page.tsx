@@ -80,13 +80,25 @@ export default function DashboardPage() {
   // Server-side Query Configurations
   const loadsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return collection(firestore, 'loads');
-  }, [firestore]);
+    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
+    const toStr = format(dateRange.end, 'yyyy-MM-dd');
+    return query(
+      collection(firestore, 'loads'),
+      where('deliveryDate', '>=', fromStr),
+      where('deliveryDate', '<=', toStr)
+    );
+  }, [firestore, dateRange]);
 
   const expensesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return collection(firestore, 'expenses');
-  }, [firestore]);
+    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
+    const toStr = format(dateRange.end, 'yyyy-MM-dd');
+    return query(
+      collection(firestore, 'expenses'),
+      where('date', '>=', fromStr),
+      where('date', '<=', toStr + 'T23:59:59.999Z')
+    );
+  }, [firestore, dateRange]);
 
   // Drivers we typically fetch all because they are reference data (and list is small)
   const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);

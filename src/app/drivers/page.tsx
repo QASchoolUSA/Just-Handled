@@ -20,7 +20,11 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { DriverForm } from '@/components/driver-form';
+import dynamic from 'next/dynamic';
+
+const DriverForm = dynamic(() => import('@/components/driver-form').then(mod => mod.DriverForm), { ssr: false });
+const BlockingLoadingModal = dynamic(() => import('@/components/blocking-loading-modal'), { ssr: false });
+
 import type { Driver } from '@/lib/types';
 import { formatCurrency, toTitleCase, formatPhoneNumber } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -489,20 +493,7 @@ export default function DriversPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Blocking Loading Modal */}
-      <Dialog open={isImporting} onOpenChange={() => { }}>
-        <DialogContent className="sm:max-w-[425px] [&>button]:hidden pointer-events-none">
-          <DialogHeader>
-            <DialogTitle className="flex flex-col items-center text-center gap-4 py-8">
-              <Loader2 className="h-12 w-12 animate-spin text-primary" />
-              <span className="text-xl">Importing Drivers...</span>
-            </DialogTitle>
-            <DialogDescription className="text-center">
-              Please wait while we process your file. Do not close this window.
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
+      <BlockingLoadingModal isOpen={isImporting} title="Importing Drivers..." />
     </div>
   );
 }

@@ -139,8 +139,12 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
   function onSubmit(values: LoadFormValues) {
     const { proofOfDelivery, rateConfirmation, ...saveableValues } = values;
 
+    const driver = drivers.find(d => d.id === values.driverId);
+    const driverName = driver ? `${driver.firstName} ${driver.lastName}` : undefined;
+
     const dataToSave: SaveableLoad = {
       ...saveableValues,
+      driverName,
       proofOfDeliveryUrl: load?.proofOfDeliveryUrl,
       rateConfirmationUrl: load?.rateConfirmationUrl,
       brokerId: saveableValues.brokerId || undefined,

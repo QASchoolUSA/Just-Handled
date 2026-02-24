@@ -44,6 +44,7 @@ export type Load = {
   id: string;
   loadNumber: string;
   driverId: string;
+  driverName?: string; // Denormalized name
 
   // Logistics
   pickupLocation: string;
@@ -78,6 +79,8 @@ export type Expense = {
   type: 'company' | 'driver' | 'owner';
   driverId?: string;
   ownerId?: string;
+  driverName?: string; // Denormalized name
+  ownerName?: string; // Denormalized name
   unitId?: string;
   date: string;
   category?: 'addition' | 'deduction';
