@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, Calendar, GripVertical, Loader2 } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, Paperclip, Download, Upload, Columns, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calendar, GripVertical, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSettlementCalculations } from '@/hooks/use-settlement-calculations';
 import { SettlementCard } from '@/components/settlement-card';
@@ -1142,7 +1142,12 @@ export default function SettlementsPage() {
                                     <TableCell key={`${load.id}-${column.id}`} className={`${column.id === 'loadNumber' ? 'pl-6 font-medium' : ''}`}>
                                       {(() => {
                                         switch (column.id) {
-                                          case 'loadNumber': return <span className="font-medium">{load.loadNumber}</span>;
+                                          case 'loadNumber': return (
+                                            <div className="flex items-center gap-2">
+                                              {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                              <span className="font-medium">{load.loadNumber}</span>
+                                            </div>
+                                          );
                                           case 'driver': return driver && (
                                             <div className="flex flex-col">
                                               <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
