@@ -49,12 +49,15 @@ import { useAuth, useUser } from '@/firebase/provider';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+import { useSidebar } from '@/components/ui/sidebar';
+
+function AppSidebarInner({ children }: { children: React.ReactNode }) {
   const { setTheme } = useTheme()
   const pathname = usePathname();
   const { user } = useUser();
   const auth = useAuth();
   const router = useRouter();
+  const { isMobile, setOpenMobile } = useSidebar();
 
   const handleLogout = async () => {
     try {
@@ -65,20 +68,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const handleLinkClick = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+
   const menuItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/settlements', label: 'Settlements', icon: BookCopy },
+    { href: '/settlements', label: 'Settlements', icon: BookCopy, hideOnMobile: true },
     { href: '/drivers', label: 'Drivers', icon: Users },
     { href: '/owners', label: 'Owners', icon: Users },
-    { href: '/document-center', label: 'Document Center', icon: FileText },
-    { href: '/factoring', label: 'Factoring', icon: Landmark },
-    { href: '/reports', label: 'Reports', icon: FileText },
-    { href: '/profit-loss', label: 'Profit & Loss', icon: PieChart },
-    { href: '/settings', label: 'Settings', icon: Settings },
+    { href: '/document-center', label: 'Document Center', icon: FileText, hideOnMobile: true },
+    { href: '/factoring', label: 'Factoring', icon: Landmark, hideOnMobile: true },
+    { href: '/reports', label: 'Reports', icon: FileText, hideOnMobile: true },
+    { href: '/profit-loss', label: 'Profit & Loss', icon: PieChart, hideOnMobile: true },
+    { href: '/settings', label: 'Settings', icon: Settings, hideOnMobile: true },
   ];
 
   return (
-    <SidebarProvider>
+    <>
       <Sidebar collapsible="icon" className="border-r border-border/40">
         <SidebarHeader className="h-16 flex items-center justify-between border-b border-border/40 px-4 group-data-[collapsible=icon]:px-0">
           <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center transition-all duration-200 overflow-hidden">
@@ -95,6 +104,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <SidebarContent className="px-2 py-2 gap-1">
           <SidebarMenu>
             {menuItems.map((item) => {
+              if (item.hideOnMobile && isMobile) return null;
               const isActive = pathname === item.href;
               return (
                 <SidebarMenuItem key={item.href}>
@@ -108,7 +118,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       : 'text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
                       }`}
                   >
-                    <Link href={item.href}>
+                    <Link href={item.href} onClick={handleLinkClick}>
                       <item.icon className={isActive ? 'text-primary' : 'text-muted-foreground'} />
                       <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
                     </Link>
@@ -166,7 +176,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild className="gap-2 rounded-lg cursor-pointer">
-                      <Link href="/profile">
+                      <Link href="/profile" onClick={handleLinkClick}>
                         <Users className="h-4 w-4" />
                         <span>Profile</span>
                       </Link>
@@ -221,6 +231,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
         <main className="flex-1 p-4 pt-0 sm:px-6 sm:py-0">{children}</main>
       </SidebarInset>
-    </SidebarProvider>
+    </>
   );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarProvider>
+      <AppSidebarInner>
+        {children}
+      </AppSidebarInner>
+    </SidebarProvider>
+  )
 }
