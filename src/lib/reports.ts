@@ -69,7 +69,7 @@ export const generateJournalCSV = (
     settlementSummary.forEach(summary => {
         if (summary.grossPay > 0) {
             journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.driverPayExpense, Debits: fmt(summary.grossPay), Credits: '', Name: summary.driverName, Description: `Gross pay for ${summary.driverName}` });
-            journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
+            journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Payable', Debits: '', Credits: fmt(summary.grossPay), Name: summary.driverName, Description: `To accrue pay for ${summary.driverName}` });
             journalNo++;
         }
 
@@ -89,7 +89,7 @@ export const generateJournalCSV = (
             }
 
             if (creditAccount) { // Only create entry if we have a defined credit account
-                journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.accruedDriverPay, Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
+                journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Payable', Debits: fmt(deduction.amount), Credits: '', Name: summary.driverName, Description: `Deduction: ${deduction.description}` });
                 journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: creditAccount, Debits: '', Credits: fmt(deduction.amount), Name: summary.driverName, Description: `To record deduction for ${summary.driverName}` });
                 journalNo++;
             }

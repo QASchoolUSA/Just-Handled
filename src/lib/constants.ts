@@ -7,7 +7,6 @@ export const LS_KEYS = {
 export const DEFAULT_ACCOUNTS: AccountSettings = {
   factoringCompany: 'Factoring Co.',
   factoringClearing: 'Factoring Clearing',
-  accruedDriverPay: 'Accrued Driver Pay',
   fuelAdvancesReceivable: 'Fuel Advances Receivable',
   escrowPayable: 'Escrow Payable',
   factoringFees: 'Factoring Fees',

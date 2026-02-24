@@ -10,7 +10,6 @@ import { Calendar } from '@/components/ui/calendar';
 import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route, CalendarIcon } from 'lucide-react';
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
-import AccruedPayHealthCheck from '@/components/accrued-pay-health-check';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay, parseISO } from 'date-fns';
@@ -127,7 +126,6 @@ export default function DashboardPage() {
   const {
     totalRevenue,
     totalFactoringFees,
-    accruedPayBalance,
     averageMargin,
     netProfit,
     totalDriverPayout,
@@ -138,7 +136,6 @@ export default function DashboardPage() {
     const initialMetrics = {
       totalRevenue: 0,
       totalFactoringFees: 0,
-      accruedPayBalance: 0,
       averageMargin: 0,
       netProfit: 0,
       totalDriverPayout: 0,
@@ -181,16 +178,6 @@ export default function DashboardPage() {
     const totalOperationalExpenses = companyExpenses + totalFactoringFees + totalDriverGrossPay;
 
 
-    const driverSpecificDeductions = filteredExpenses
-      .filter(e => e.type === 'driver' && e.driverId)
-      .reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
-
-    const totalRecurringDeductions = drivers.reduce((sum, d) =>
-      sum + safeParseNumber(d.recurringDeductions.insurance) + safeParseNumber(d.recurringDeductions.escrow), 0);
-    const totalDriverDeductions = driverSpecificDeductions + totalRecurringDeductions;
-
-    const accruedPayBalance = totalDriverGrossPay - totalDriverDeductions;
-
     const netProfit = totalRevenue - totalOperationalExpenses;
     const averageMargin = filteredLoads.length > 0 ? netProfit / filteredLoads.length : 0;
 
@@ -202,7 +189,6 @@ export default function DashboardPage() {
     return {
       totalRevenue,
       totalFactoringFees,
-      accruedPayBalance,
       averageMargin,
       netProfit,
       totalDriverPayout,
@@ -362,11 +348,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <div className="lg:col-span-2">
-          <AccruedPayHealthCheck balance={accruedPayBalance} />
-        </div>
-
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Avg. Profit / Load
@@ -374,32 +356,34 @@ export default function DashboardPage() {
             <BarChart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={cn("text-2xl font-display font-bold", averageMargin >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(averageMargin)}</div>
-            <p className="text-xs text-muted-foreground mt-1">
+            <div className={cn("text-5xl font-display font-bold", averageMargin >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(averageMargin)}</div>
+            <p className="text-sm text-muted-foreground mt-2">
               Net profit per completed load.
             </p>
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-6">
-          <Card className="flex-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Cost per Mile</CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-display font-bold">{formatCurrency(averageCpm)}</div>
-            </CardContent>
-          </Card>
-          <Card className="flex-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Rate per Mile</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-display font-bold">{formatCurrency(averageRpm)}</div>
-            </CardContent>
-          </Card>
+        <div className="flex flex-col gap-6 lg:col-span-2">
+          <div className="grid grid-cols-2 gap-6 h-full">
+            <Card className="flex-1 flex flex-col justify-center">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Cost per Mile</CardTitle>
+                <TrendingDown className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-display font-bold">{formatCurrency(averageCpm)}</div>
+              </CardContent>
+            </Card>
+            <Card className="flex-1 flex flex-col justify-center">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Rate per Mile</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-display font-bold">{formatCurrency(averageRpm)}</div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

@@ -16,7 +16,6 @@ import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
 const formSchema = z.object({
   factoringCompany: z.string().min(1, 'Required'),
   factoringClearing: z.string().min(1, 'Required'),
-  accruedDriverPay: z.string().min(1, 'Required'),
   fuelAdvancesReceivable: z.string().min(1, 'Required'),
   escrowPayable: z.string().min(1, 'Required'),
   factoringFees: z.string().min(1, 'Required'),
@@ -43,17 +42,16 @@ export default function SettingsPage() {
       description: 'Your QBO account mappings have been updated.',
     });
   }
-  
-  const formFields: {name: keyof SettingsFormValues; label: string; description: string}[] = [
-      { name: 'factoringCompany', label: 'Factoring Company Name', description: 'The customer name for QBO invoices.' },
-      { name: 'factoringClearing', label: 'Factoring Clearing Account', description: 'Asset account for staging advances.' },
-      { name: 'accruedDriverPay', label: 'Accrued Driver Pay Account', description: 'Critical liability account for settlements.' },
-      { name: 'fuelAdvancesReceivable', label: 'Fuel Advances Receivable Account', description: 'Asset account for driver fuel deductions.' },
-      { name: 'escrowPayable', label: 'Escrow Payable Account', description: 'Liability account for driver escrow.' },
-      { name: 'factoringFees', label: 'Factoring Fees Account', description: 'Expense/COGS account for factoring costs.' },
-      { name: 'linehaulRevenue', label: 'Linehaul Revenue Account', description: 'Income account for linehaul.' },
-      { name: 'fuelSurchargeRevenue', label: 'Fuel Surcharge Revenue Account', description: 'Income account for fuel surcharges.' },
-      { name: 'driverPayExpense', label: 'Driver Pay Expense Account', description: 'Expense/COGS account for driver gross pay.' },
+
+  const formFields: { name: keyof SettingsFormValues; label: string; description: string }[] = [
+    { name: 'factoringCompany', label: 'Factoring Company Name', description: 'The customer name for QBO invoices.' },
+    { name: 'factoringClearing', label: 'Factoring Clearing Account', description: 'Asset account for staging advances.' },
+    { name: 'fuelAdvancesReceivable', label: 'Fuel Advances Receivable Account', description: 'Asset account for driver fuel deductions.' },
+    { name: 'escrowPayable', label: 'Escrow Payable Account', description: 'Liability account for driver escrow.' },
+    { name: 'factoringFees', label: 'Factoring Fees Account', description: 'Expense/COGS account for factoring costs.' },
+    { name: 'linehaulRevenue', label: 'Linehaul Revenue Account', description: 'Income account for linehaul.' },
+    { name: 'fuelSurchargeRevenue', label: 'Fuel Surcharge Revenue Account', description: 'Income account for fuel surcharges.' },
+    { name: 'driverPayExpense', label: 'Driver Pay Expense Account', description: 'Expense/COGS account for driver gross pay.' },
   ]
 
   return (

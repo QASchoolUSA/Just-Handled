@@ -92,7 +92,6 @@ export type Expense = {
 export type AccountSettings = {
   factoringCompany: string;
   factoringClearing: string;
-  accruedDriverPay: string;
   fuelAdvancesReceivable: string;
   escrowPayable: string;
   factoringFees: string;
