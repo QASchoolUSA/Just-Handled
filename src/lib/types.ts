@@ -110,8 +110,9 @@ export type ImportError = {
 };
 
 export type ImportResult = {
-  success: number;
+  successCount: number;
   errors: ImportError[];
+  skippedCount?: number;
 };
 
 export type SettlementSummary = {

@@ -37,20 +37,8 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc, query, where, getDocs, limit, writeBatch } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
-
-
-
-type ImportError = {
-  row: number;
-  data: any;
-  reason: string;
-};
-
-type ImportResult = {
-  successCount: number;
-  errors: ImportError[];
-  skippedCount?: number;
-};
+import { GroupedOwnerSettlement } from '@/components/grouped-owner-settlement';
+import type { ImportError, ImportResult } from '@/lib/types';
 
 // --- Helper Functions ---
 
@@ -1418,15 +1406,24 @@ export default function SettlementsPage() {
                 </Card>
               </div>
 
-              {ownerSettlementSummary.map(summary => (
-                <SettlementCard
-                  key={summary.ownerId}
-                  summary={summary}
-                  type="owner"
-                  onExportPDF={() => handleExportPDF(summary, weekStart, weekEnd)}
+              {/* Render Grouped Owner Settlements */}
+              {Object.entries(
+                ownerSettlementSummary.reduce((acc, summary) => {
+                  const name = summary.ownerName || 'Unknown Owner';
+                  if (!acc[name]) acc[name] = [];
+                  acc[name].push(summary);
+                  return acc;
+                }, {} as Record<string, OwnerSettlementSummary[]>)
+              ).map(([ownerName, summaries]) => (
+                <GroupedOwnerSettlement
+                  key={ownerName}
+                  ownerName={ownerName}
+                  summaries={summaries}
+                  onExportPDF={(summary: OwnerSettlementSummary) => handleExportPDF(summary, weekStart, weekEnd)}
                   owners={owners || []}
                 />
               ))}
+
               {ownerSettlementSummary.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-border/50 rounded-xl bg-muted/10">
                   <p className="text-muted-foreground">No owner settlements calculated for this period.</p>

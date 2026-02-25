@@ -41,6 +41,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "firebase": "^11.9.1",
+    "framer-motion": "^12.34.3",
     "genkit": "^1.28.0",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
