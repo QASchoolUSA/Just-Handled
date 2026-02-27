@@ -46,6 +46,7 @@ import {
     ChevronDown
 } from 'lucide-react';
 import { useFunctions, useFirestore, useStorage, useUser } from '@/firebase';
+import { useCompany } from '@/firebase/provider';
 import { httpsCallable } from 'firebase/functions';
 import {
     collection,
@@ -207,6 +208,7 @@ export default function AnalyzeDocsPage() {
     const firestore = useFirestore();
     const storage = useStorage();
     const { user } = useUser();
+    const { companyId } = useCompany();
 
     // -- State --
     const [files, setFiles] = useState<File[]>([]);
@@ -245,11 +247,11 @@ export default function AnalyzeDocsPage() {
 
     // 1. Fetch Saved Receipts (Real-time) with Pagination
     useEffect(() => {
-        if (!user || !firestore) return;
+        if (!user || !firestore || !companyId) return;
         setLoadingReceipts(true);
 
         const q = query(
-            collection(firestore, 'receipts'),
+            collection(firestore, `companies/${companyId}/receipts`),
             orderBy('createdAt', 'desc'),
             limit(receiptLimit)
         );
@@ -271,18 +273,18 @@ export default function AnalyzeDocsPage() {
 
     // 2. Fetch Unit IDs & Owners (for dropdown & bill to)
     useEffect(() => {
-        if (!user || !firestore) return;
+        if (!user || !firestore || !companyId) return;
 
         const fetchData = async () => {
             try {
                 // Fetch Drivers for Unit IDs
-                const driversSnap = await getDocs(collection(firestore, 'drivers'));
+                const driversSnap = await getDocs(collection(firestore, `companies/${companyId}/drivers`));
                 const driverUnitIds = driversSnap.docs
                     .map(d => d.data().unitId)
                     .filter(Boolean);
 
                 // Fetch Owners for "Bill To" mapping and Unit IDs
-                const ownersSnap = await getDocs(collection(firestore, 'owners'));
+                const ownersSnap = await getDocs(collection(firestore, `companies/${companyId}/owners`));
                 const ownerMap: Record<string, string> = {};
                 const ownerUnitIds: string[] = [];
 
@@ -439,7 +441,7 @@ export default function AnalyzeDocsPage() {
 
                             // 1. Check Owners
                             const qOwner = query(
-                                collection(firestore, "owners"),
+                                collection(firestore, `companies/${companyId}/owners`),
                                 where("unitId", "==", cleanUnitId),
                                 limit(1)
                             );
@@ -452,7 +454,7 @@ export default function AnalyzeDocsPage() {
 
                             // 2. Check Drivers
                             const qDriver = query(
-                                collection(firestore, "drivers"),
+                                collection(firestore, `companies/${companyId}/drivers`),
                                 where("unitId", "==", cleanUnitId),
                                 limit(1)
                             );
@@ -471,7 +473,7 @@ export default function AnalyzeDocsPage() {
                         // Create Expense Document
                         let expenseId = null;
                         try {
-                            const expenseDoc = await addDoc(collection(firestore, "expenses"), {
+                            const expenseDoc = await addDoc(collection(firestore, `companies/${companyId}/expenses`), {
                                 description: receipt.vendor_name || "Receipt Expense",
                                 amount: typeof receipt.total_amount === 'number' ? receipt.total_amount : parseFloat(String(receipt.total_amount).replace(/[^0-9.]/g, '') || '0'),
                                 date: receipt.transaction_date || new Date().toISOString().split('T')[0],
@@ -488,7 +490,7 @@ export default function AnalyzeDocsPage() {
                             console.error("Failed to create expense doc:", e);
                         }
 
-                        await addDoc(collection(firestore, "receipts"), {
+                        await addDoc(collection(firestore, `companies/${companyId}/receipts`), {
                             ...receipt,
                             userId: user.uid,
                             expenseOwner: expenseOwner,
@@ -524,11 +526,11 @@ export default function AnalyzeDocsPage() {
     };
 
     const updateReceiptUnitId = async (receiptId: string, newUnitId: string, relatedExpenseId?: string) => {
-        if (!firestore) return;
+        if (!firestore || !companyId) return;
 
         try {
             // 1. Update Receipt
-            await updateDoc(doc(firestore, 'receipts', receiptId), {
+            await updateDoc(doc(firestore, `companies/${companyId}/receipts`, receiptId), {
                 unit_id: newUnitId
             });
 
@@ -536,7 +538,7 @@ export default function AnalyzeDocsPage() {
             // In a real app, you'd re-run the driver/owner lookup here to keep them in sync.
             // For now, we update the expense unitId at least.
             if (relatedExpenseId) {
-                await updateDoc(doc(firestore, 'expenses', relatedExpenseId), {
+                await updateDoc(doc(firestore, `companies/${companyId}/expenses`, relatedExpenseId), {
                     unitId: newUnitId
                 });
             }
@@ -549,9 +551,9 @@ export default function AnalyzeDocsPage() {
     };
 
     const toggleReimbursable = async (receipt: SavedReceipt, val: boolean) => {
-        if (!firestore) return;
+        if (!firestore || !companyId) return;
         try {
-            await updateDoc(doc(firestore, 'receipts', receipt.id), {
+            await updateDoc(doc(firestore, `companies/${companyId}/receipts`, receipt.id), {
                 reimbursable: val
             });
         } catch (e) {
@@ -561,15 +563,15 @@ export default function AnalyzeDocsPage() {
 
 
     const confirmDelete = async () => {
-        if (!receiptToDelete || !firestore) return;
+        if (!receiptToDelete || !firestore || !companyId) return;
         setIsDeleting(true);
         try {
             // 1. Delete Firestore Receipt
-            await deleteDoc(doc(firestore, 'receipts', receiptToDelete.id));
+            await deleteDoc(doc(firestore, `companies/${companyId}/receipts`, receiptToDelete.id));
 
             // 2. Delete Related Expense
             if (receiptToDelete.relatedExpenseId) {
-                await deleteDoc(doc(firestore, 'expenses', receiptToDelete.relatedExpenseId));
+                await deleteDoc(doc(firestore, `companies/${companyId}/expenses`, receiptToDelete.relatedExpenseId));
             }
 
             // 3. Delete from Storage (Optional - cleanup)

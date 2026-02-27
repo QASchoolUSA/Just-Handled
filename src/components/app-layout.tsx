@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, Sparkles, MoreHorizontal } from 'lucide-react';
-import { useAuth, useUser } from '@/firebase/provider';
+import { useAuth, useUser, useCompany } from '@/firebase/provider';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 
@@ -55,6 +55,7 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
   const { setTheme } = useTheme()
   const pathname = usePathname();
   const { user } = useUser();
+  const { companyName } = useCompany();
   const auth = useAuth();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -89,7 +90,7 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Sidebar collapsible="icon" className="border-r border-border/40">
-        <SidebarHeader className="h-16 flex items-center justify-between border-b border-border/40 px-4 group-data-[collapsible=icon]:px-0">
+        <SidebarHeader className="h-20 flex items-center justify-center border-b border-border/40 px-4 group-data-[collapsible=icon]:px-0">
           <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center transition-all duration-200 overflow-hidden">
             <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600 text-white shadow-lg shadow-primary/20 transition-all duration-200">
               <span className="font-bold text-sm">JH</span>
@@ -97,6 +98,9 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
             <div className="flex flex-col flex-1 items-center justify-center text-center h-full min-w-0 group-data-[collapsible=icon]:hidden transition-all duration-200">
               <span className="font-display text-2xl font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70 truncate pb-0.5">
                 Just Handled
+              </span>
+              <span className="text-xs font-medium text-muted-foreground truncate max-w-[180px]">
+                {companyName || 'Loading...'}
               </span>
             </div>
           </div>

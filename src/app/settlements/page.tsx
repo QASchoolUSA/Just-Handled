@@ -34,6 +34,7 @@ import { formatCurrency, downloadCsv, parseNumber, normalizeDateFormat, toTitleC
 import { exportInvoicesAsCsv, exportJournalAsCsv } from '@/lib/exports/csv-exports';
 import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCompany } from '@/firebase/provider';
 import { collection, doc, query, where, getDocs, limit, writeBatch } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
@@ -96,6 +97,7 @@ const TABLE_COLUMNS = [
 
 export default function SettlementsPage() {
   const firestore = useFirestore();
+  const { companyId } = useCompany();
 
   // Format dates for Firestore query (YYYY-MM-DD)
   // We use state for selectedWeek, so these need to be derived from that
@@ -106,10 +108,10 @@ export default function SettlementsPage() {
 
   // --- Firestore Queries with Date Filtering ---
   // --- Firestore References (For Writes) ---
-  const loadsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'loads') : null, [firestore]);
-  const expensesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'expenses') : null, [firestore]);
-  const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
-  const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
+  const loadsCollectionRef = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/loads`) : null, [firestore, companyId]);
+  const expensesCollectionRef = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/expenses`) : null, [firestore, companyId]);
+  const driversCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
+  const ownersCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/owners`) : null, [firestore, companyId]);
 
   // --- Firestore Queries (For Reads with Date Filtering) ---
 
@@ -158,11 +160,11 @@ export default function SettlementsPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const handleGlobalSearch = async () => {
-    if (!searchQuery.trim() || !firestore) return;
+    if (!searchQuery.trim() || !firestore || !companyId) return;
     setIsSearchingGlobal(true);
     try {
       const q = query(
-        collection(firestore, 'loads'),
+        collection(firestore, `companies/${companyId}/loads`),
         where('loadNumber', '==', searchQuery.trim()),
         limit(1)
       );
@@ -356,8 +358,8 @@ export default function SettlementsPage() {
     setIsLoadFormOpen(true);
   };
   const handleDeleteLoad = async (loadId: string) => {
-    if (firestore && confirm('Are you sure you want to delete this load?')) {
-      deleteDocumentNonBlocking(doc(firestore, 'loads', loadId));
+    if (firestore && companyId && confirm('Are you sure you want to delete this load?')) {
+      deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/loads`, loadId));
     }
   };
   const handleSaveLoad = async (loadData: Omit<Load, 'id'>) => {
@@ -376,9 +378,9 @@ export default function SettlementsPage() {
       transactionFee: loadData.transactionFee || 0,
     };
 
-    if (firestore && loadsCollectionRef) {
+    if (firestore && loadsCollectionRef && companyId) {
       if (editingLoad) {
-        const loadDoc = doc(firestore, 'loads', editingLoad.id);
+        const loadDoc = doc(firestore, `companies/${companyId}/loads`, editingLoad.id);
         setDocumentNonBlocking(loadDoc, dataToSave, { merge: true });
       } else {
         if (!loadsCollectionRef) return;
@@ -398,14 +400,14 @@ export default function SettlementsPage() {
     setIsExpenseFormOpen(true);
   };
   const handleDeleteExpense = async (expenseId: string) => {
-    if (firestore && confirm('Are you sure you want to delete this expense?')) {
-      deleteDocumentNonBlocking(doc(firestore, 'expenses', expenseId));
+    if (firestore && companyId && confirm('Are you sure you want to delete this expense?')) {
+      deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/expenses`, expenseId));
     }
   };
   const handleSaveExpense = async (expenseData: Omit<Expense, 'id'>) => {
-    if (!firestore || !expensesCollectionRef) return;
+    if (!firestore || !expensesCollectionRef || !companyId) return;
     if (editingExpense) {
-      setDocumentNonBlocking(doc(firestore, 'expenses', editingExpense.id), expenseData, { merge: true });
+      setDocumentNonBlocking(doc(firestore, `companies/${companyId}/expenses`, editingExpense.id), expenseData, { merge: true });
     } else {
       if (!expensesCollectionRef) return;
       addDocumentNonBlocking(expensesCollectionRef, expenseData);
@@ -597,7 +599,7 @@ export default function SettlementsPage() {
             const loadTruckId = row['Truck ID']?.trim();
             if (loadTruckId && driver.unitId !== loadTruckId) {
               console.log(`Updating ${driver.firstName} ${driver.lastName}'s Unit ID: "${driver.unitId}" -> "${loadTruckId}"`);
-              const driverDoc = doc(firestore, 'drivers', driver.id);
+              const driverDoc = doc(firestore, `companies/${companyId}/drivers`, driver.id);
               await setDocumentNonBlocking(driverDoc, { unitId: loadTruckId }, { merge: true });
               // Update local driver object for subsequent loads in same import
               driver.unitId = loadTruckId;

@@ -7,9 +7,9 @@ import AuthGuard from '@/components/auth-guard';
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const isLoginPage = pathname === '/login';
+    const isPublicPage = pathname === '/login' || pathname === '/register';
 
-    if (isLoginPage) {
+    if (isPublicPage) {
         return <>{children}</>;
     }
 

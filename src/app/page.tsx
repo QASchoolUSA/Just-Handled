@@ -11,6 +11,7 @@ import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, R
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCompany } from '@/firebase/provider';
 import { collection, query, where } from 'firebase/firestore';
 import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay, parseISO } from 'date-fns';
 
@@ -33,6 +34,7 @@ const parseDateAny = (dateStr: string) => {
 
 export default function DashboardPage() {
   const firestore = useFirestore();
+  const { companyId } = useCompany();
 
   type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
@@ -79,29 +81,29 @@ export default function DashboardPage() {
 
   // Server-side Query Configurations
   const loadsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !companyId) return null;
     const fromStr = format(dateRange.start, 'yyyy-MM-dd');
     const toStr = format(dateRange.end, 'yyyy-MM-dd');
     return query(
-      collection(firestore, 'loads'),
+      collection(firestore, `companies/${companyId}/loads`),
       where('deliveryDate', '>=', fromStr),
       where('deliveryDate', '<=', toStr)
     );
-  }, [firestore, dateRange]);
+  }, [firestore, companyId, dateRange]);
 
   const expensesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !companyId) return null;
     const fromStr = format(dateRange.start, 'yyyy-MM-dd');
     const toStr = format(dateRange.end, 'yyyy-MM-dd');
     return query(
-      collection(firestore, 'expenses'),
+      collection(firestore, `companies/${companyId}/expenses`),
       where('date', '>=', fromStr),
       where('date', '<=', toStr + 'T23:59:59.999Z')
     );
-  }, [firestore, dateRange]);
+  }, [firestore, companyId, dateRange]);
 
   // Drivers we typically fetch all because they are reference data (and list is small)
-  const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
+  const driversCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
 
   const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
   const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection); // Keep fetching all drivers

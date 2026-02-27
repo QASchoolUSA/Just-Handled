@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import * as XLSX from "xlsx";
-import { Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import React, { useState } from "react";
+import { Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -15,270 +14,269 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore } from "@/firebase";
+import { useCompany } from "@/firebase/provider";
 import { collection, getDocs, query, where, writeBatch, doc } from "firebase/firestore";
 import type { Load } from "@/lib/types";
 
-type MatchedRecord = {
+// --- Types ---
+
+type InvoiceRecord = {
     invoiceId: string;
-    advance: number;
-    factoringFee: number;
-    loadId?: string;
-    loadNumber?: string;
-    status: 'matched' | 'unmatched';
+    invoiceDate: string;
+    invoiceAmount: number;
+    reserveAmount: number;
+    transactionFee: number;
+    proratedPrimeWire: number;
+    totalFactoringCost: number;
 };
+
+type LoadGroup = {
+    loadNumber: string;
+    loadId: string | null;
+    status: 'matched' | 'unmatched';
+    invoices: InvoiceRecord[];
+    totalInvoiceAmount: number;
+    totalFactoringCost: number;
+    totalAdvance: number;
+};
+
+type GlobalStats = {
+    totalScheduleAmount: number;
+    totalPrimeRate: number;
+    totalWireFee: number;
+    matchedLoadsCount: number;
+    unmatchedLoadsCount: number;
+    totalCost: number;
+};
+
+// --- Page Component ---
 
 export default function FactoringPage() {
     const { toast } = useToast();
     const firestore = useFirestore();
+    const { companyId } = useCompany();
 
-    const [file, setFile] = useState<File | null>(null);
-    const [previewData, setPreviewData] = useState<MatchedRecord[]>([]);
+    const [advanceFile, setAdvanceFile] = useState<File | null>(null);
+    const [agingFile, setAgingFile] = useState<File | null>(null);
+
+    const [previewData, setPreviewData] = useState<LoadGroup[]>([]);
+    const [stats, setStats] = useState<GlobalStats | null>(null);
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
     const [processing, setProcessing] = useState(false);
     const [uploading, setUploading] = useState(false);
 
-    // 1. Handle File Selection & Parsing
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0];
-        if (!selectedFile) return;
+    const toggleRow = (loadNumber: string) => {
+        const newExpanded = new Set(expandedRows);
+        if (newExpanded.has(loadNumber)) {
+            newExpanded.delete(loadNumber);
+        } else {
+            newExpanded.add(loadNumber);
+        }
+        setExpandedRows(newExpanded);
+    };
 
-        console.log("File selected:", selectedFile.name);
-        toast({ title: "Reading file...", description: "Scanning for headers..." });
+    const handleFileUpload = (type: 'advance' | 'aging', file: File | undefined) => {
+        if (!file) return;
+        if (type === 'advance') setAdvanceFile(file);
+        if (type === 'aging') setAgingFile(file);
+    };
 
-        setFile(selectedFile);
+    const parsePdfText = async (file: File): Promise<string> => {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
+        if (!res.ok) {
+            throw new Error(`Failed to parse ${file.name}`);
+        }
+        const data = await res.json();
+        return data.text;
+    };
+
+    const processFiles = async () => {
+        if (!advanceFile) {
+            toast({ title: "Missing File", description: "Please upload the Advance Schedule PDF.", variant: "destructive" });
+            return;
+        }
+
         setProcessing(true);
-
         try {
-            const data = await selectedFile.arrayBuffer();
-            const workbook = XLSX.read(data);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
+            toast({ title: "Parsing PDFs...", description: "Extracting text from documents." });
 
-            // Get all data as arrays first to find the header row
-            const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-            console.log("Total rows:", rawRows.length);
+            const advanceText = await parsePdfText(advanceFile);
+            const agingText = agingFile ? await parsePdfText(agingFile) : '';
 
-            if (rawRows.length === 0) {
-                toast({ title: "Empty File", description: "No rows found.", variant: "destructive" });
+            // 1. Extract Advance Schedule Invoices
+            const advanceInvoices: any[] = [];
+            // Matches: [Customer Name?] IN-003458 02/24/2026 $4,000.00 $40.00 $40.00 $3,920.00
+            const advanceRegex = /(IN-\d+(?:-[A-Za-z])?|\d{4,})\s+(\d{2}\/\d{2}\/\d{4})\s+\$([\d,.]+)\s+\$([\d,.]+)\s+\$([\d,.]+)\s+\$([\d,.]+)/g;
+            let match;
+            let totalScheduleAmount = 0;
+
+            while ((match = advanceRegex.exec(advanceText)) !== null) {
+                const invoiceId = match[1];
+                const date = match[2];
+                const amount = parseFloat(match[3].replace(/,/g, ''));
+                const reserve = parseFloat(match[4].replace(/,/g, ''));
+                const fee = parseFloat(match[5].replace(/,/g, ''));
+
+                advanceInvoices.push({ invoiceId, date, amount, reserve, fee });
+                totalScheduleAmount += amount;
+            }
+
+            if (advanceInvoices.length === 0) {
+                toast({ title: "Parse Error", description: "Could not find any invoices in the Advance Schedule.", variant: "destructive" });
                 setProcessing(false);
                 return;
             }
 
-            // Find the header row index by scoring candidates
-            // We look for the row that contains the MOST keywords, avoiding metadata/title rows
-            let bestHeaderRowIndex = -1;
-            let maxScore = 0;
-            const headerKeywords = ["invoice number", "invoice #", "load", "advance", "fee", "total", "amount", "carrier", "date", "balance"];
+            // Extract Prime Rate and Wire Fee
+            const primeMatch = advanceText.match(/Prime rate surcharge\s+\$([\d,.]+)/i);
+            const wireMatch = advanceText.match(/Wire fee\s+\$([\d,.]+)/i);
 
-            for (let i = 0; i < Math.min(rawRows.length, 30); i++) {
-                const row = rawRows[i];
-                if (!Array.isArray(row)) continue;
+            const primeFee = primeMatch ? parseFloat(primeMatch[1].replace(/,/g, '')) : 0;
+            const wireFee = wireMatch ? parseFloat(wireMatch[1].replace(/,/g, '')) : 0;
+            const totalOtherCharges = primeFee + wireFee;
 
-                // Calculate score for this row
-                let score = 0;
-                const rowString = row.map(c => String(c || "").toLowerCase()).join(" ");
-
-                headerKeywords.forEach(keyword => {
-                    if (rowString.includes(keyword)) score++;
-                });
-
-                // Require at least 2 matches to consider it a valid header (e.g. "Invoice" AND "Fee")
-                // Or if we find "invoice number" explicitly, give it a big boost
-                if (rowString.includes("invoice number")) score += 2;
-
-                if (score > maxScore) {
-                    maxScore = score;
-                    bestHeaderRowIndex = i;
+            // 2. Extract Aging Detail Mappings (Invoice -> Load)
+            const loadMapping = new Map<string, string>();
+            if (agingText) {
+                // Matches: IN-003191 383862 $1,500.00 $1,485.00 01/30/2026 26
+                const agingRegex = /(IN-\d+(?:-[A-Za-z])?|\d{4,})\s+([A-Za-z0-9-]+)\s+\$([\d,.]+)\s+\$([\d,.]+)/g;
+                while ((match = agingRegex.exec(agingText)) !== null) {
+                    const invoiceId = match[1];
+                    const loadNumber = match[2];
+                    loadMapping.set(invoiceId, loadNumber);
                 }
             }
 
-            if (bestHeaderRowIndex === -1 || maxScore < 2) {
-                toast({
-                    title: "Structure Mismatch",
-                    description: "Could not find a valid header row.",
-                    variant: "destructive"
-                });
-                console.error("Scanning failed. Best score:", maxScore);
-                setProcessing(false);
-                return;
-            }
+            // 3. Query Firestore
+            toast({ title: "Matching Loads...", description: "Querying database for matches." });
 
-            console.log(`Found header at index ${bestHeaderRowIndex} with score ${maxScore}`);
-            const headerRowIndex = bestHeaderRowIndex;
+            const allInvoiceIds = advanceInvoices.map(i => i.invoiceId);
+            const allMappedLoadNumbers = Array.from(new Set(Array.from(loadMapping.values())));
 
-            // 2. Parsed with dense arrays (defval: "") to ensure alignment
-            // Use Array.from to force sparse arrays to become dense with undefineds, then map to strings
-            const headers = Array.from(rawRows[headerRowIndex] || []).map((h: any) => String(h || "").trim());
-            const dataRows = rawRows.slice(headerRowIndex + 1);
+            const loadMapByNum = new Map<string, Load & { id: string }>();
+            const loadMapByInv = new Map<string, Load & { id: string }>();
 
-            console.log("Headers:", headers);
-
-            // 3. Find Column Indices
-            const findColIndex = (candidates: string[]) => {
-                for (const candidate of candidates) {
-                    const index = headers.findIndex((h: string) =>
-                        h && h.toLowerCase().includes(candidate.toLowerCase())
-                    );
-                    if (index !== -1) return index;
-                }
-                return -1;
-            };
-
-            const idxInvoice = findColIndex(["Invoice Number", "Invoice #", "Load #"]);
-            const idxAdvance = findColIndex(["Advance Amount", "Advance"]);
-            const idxFee = findColIndex(["Total Fee", "Factoring Fee", "Factoring", "Fee"]);
-
-            if (idxInvoice === -1) {
-                toast({ title: "Missing Column", description: "Found header row but missing 'Invoice Number' column.", variant: "destructive" });
-                setProcessing(false);
-                return;
-            }
-
-            if (!firestore) return;
-
-            // --- PROCESSING ---
-            const uniqueIds = new Set<string>();
-            const rowDataList: { invoiceId: string, advance: number, factoringFee: number }[] = [];
-
-            dataRows.forEach((row) => {
-                if (!Array.isArray(row)) return;
-
-                const invoiceIdVal = row[idxInvoice];
-                const invoiceId = String(invoiceIdVal || "").trim();
-
-                // Helper parse
-                const parseCurrency = (val: any) => {
-                    if (typeof val === 'number') return val;
-                    if (typeof val === 'string') {
-                        if (!val.trim()) return 0;
-                        const parsed = parseFloat(val.replace(/[^0-9.-]+/g, ""));
-                        return isNaN(parsed) ? 0 : parsed;
+            if (firestore) {
+                // Chunk queries (max 30 for 'in' clause)
+                const fetchChunks = async (field: 'loadNumber' | 'invoiceId', values: string[], mapFunc: (load: Load & { id: string }) => void) => {
+                    for (let i = 0; i < values.length; i += 30) {
+                        const chunk = values.slice(i, i + 30);
+                        if (chunk.length === 0) continue;
+                        const q = query(collection(firestore, `companies/${companyId}/loads`), where(field, 'in', chunk));
+                        const snap = await getDocs(q);
+                        snap.forEach(doc => {
+                            mapFunc({ ...doc.data() as Load, id: doc.id });
+                        });
                     }
-                    return 0;
                 };
 
-                if (invoiceId && invoiceId.length > 1) {
-                    uniqueIds.add(invoiceId);
+                await Promise.all([
+                    fetchChunks('loadNumber', allMappedLoadNumbers, (load) => loadMapByNum.set(load.loadNumber, load)),
+                    fetchChunks('invoiceId', allInvoiceIds, (load) => loadMapByInv.set(load.invoiceId, load))
+                ]);
+            }
 
-                    // Robust Fee Extraction:
-                    // Primary: Check exact index
-                    // Fallback: Check index - 1 (Left Shift) - Common with trailing columns
-                    let feeVal = parseCurrency(row[idxFee]);
+            // 4. Combine and group by Load Number
+            const loadsMap = new Map<string, LoadGroup>();
 
-                    if ((feeVal === 0 || row[idxFee] === undefined) && idxFee > 0) {
-                        const leftVal = parseCurrency(row[idxFee - 1]);
-                        if (leftVal !== 0) {
-                            feeVal = leftVal;
-                        }
-                    }
+            for (const inv of advanceInvoices) {
+                const agLoadNum = loadMapping.get(inv.invoiceId);
 
-                    rowDataList.push({
-                        invoiceId,
-                        advance: idxAdvance !== -1 ? parseCurrency(row[idxAdvance]) : 0,
-                        factoringFee: feeVal
+                let foundLoad: (Load & { id: string }) | null = null;
+                if (agLoadNum && loadMapByNum.has(agLoadNum)) {
+                    foundLoad = loadMapByNum.get(agLoadNum)!;
+                } else if (loadMapByInv.has(inv.invoiceId)) {
+                    foundLoad = loadMapByInv.get(inv.invoiceId)!;
+                }
+
+                const effectiveLoadNumber = foundLoad ? foundLoad.loadNumber : (agLoadNum || `Unknown (${inv.invoiceId})`);
+
+                const proratedOther = totalScheduleAmount > 0
+                    ? (inv.amount / totalScheduleAmount) * totalOtherCharges
+                    : 0;
+                const totalCost = inv.fee + proratedOther;
+
+                if (!loadsMap.has(effectiveLoadNumber)) {
+                    loadsMap.set(effectiveLoadNumber, {
+                        loadNumber: effectiveLoadNumber,
+                        loadId: foundLoad ? foundLoad.id : null,
+                        status: foundLoad ? 'matched' : 'unmatched',
+                        invoices: [],
+                        totalInvoiceAmount: 0,
+                        totalFactoringCost: 0,
+                        totalAdvance: 0
                     });
                 }
+
+                const group = loadsMap.get(effectiveLoadNumber)!;
+                group.invoices.push({
+                    invoiceId: inv.invoiceId,
+                    invoiceDate: inv.date,
+                    invoiceAmount: inv.amount,
+                    reserveAmount: inv.reserve,
+                    transactionFee: inv.fee,
+                    proratedPrimeWire: proratedOther,
+                    totalFactoringCost: totalCost
+                });
+                group.totalInvoiceAmount += inv.amount;
+                group.totalFactoringCost += totalCost;
+                group.totalAdvance += (inv.amount - inv.reserve - inv.fee);
+            }
+
+            const finalPreviewData = Array.from(loadsMap.values());
+
+            setPreviewData(finalPreviewData);
+            setStats({
+                totalScheduleAmount,
+                totalPrimeRate: primeFee,
+                totalWireFee: wireFee,
+                matchedLoadsCount: finalPreviewData.filter(g => g.status === 'matched').length,
+                unmatchedLoadsCount: finalPreviewData.filter(g => g.status === 'unmatched').length,
+                totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
             });
 
-            const allIds = Array.from(uniqueIds);
-            const loadMap = new Map<string, Load & { id: string }>(); // Map invoiceId/loadNumber -> Load
+            toast({ title: "Success", description: `Prepared ${finalPreviewData.length} load records.` });
 
-            // Firestore 'IN' limit is 30
-            const CHUNK_SIZE = 30;
-            const chunks = [];
-            for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
-                chunks.push(allIds.slice(i, i + CHUNK_SIZE));
-            }
-
-            toast({ title: "Processing Data", description: `Matching ${allIds.length} unique records in ${chunks.length} batches...` });
-
-            // Process chunks sequentially to be kind to the connection limit
-            for (let i = 0; i < chunks.length; i++) {
-                const chunk = chunks[i];
-                // Run two queries in parallel for this chunk: one for invoiceId, one for loadNumber
-                const q1 = query(collection(firestore, 'loads'), where('invoiceId', 'in', chunk));
-                const q2 = query(collection(firestore, 'loads'), where('loadNumber', 'in', chunk));
-
-                try {
-                    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-
-                    snap1.forEach(doc => {
-                        const data = doc.data() as Load;
-                        const load = { ...data, id: doc.id };
-                        if (data.invoiceId) loadMap.set(data.invoiceId, load);
-                    });
-
-                    snap2.forEach(doc => {
-                        const data = doc.data() as Load;
-                        const load = { ...data, id: doc.id };
-                        if (data.loadNumber) loadMap.set(data.loadNumber, load);
-                    });
-                } catch (err) {
-                    console.error("Error processing chunk", i, err);
-                }
-            }
-
-            // Now match cleanly from memory
-            const matchedRecords: MatchedRecord[] = rowDataList.map(row => {
-                // Try looking up by invoiceId as-is
-                let foundLoad = loadMap.get(row.invoiceId);
-
-                return {
-                    invoiceId: row.invoiceId,
-                    advance: row.advance,
-                    factoringFee: row.factoringFee,
-                    loadId: foundLoad?.id,
-                    loadNumber: foundLoad?.loadNumber || foundLoad?.invoiceId,
-                    status: foundLoad ? 'matched' : 'unmatched'
-                } as MatchedRecord;
-            });
-
-            console.log("Matched results:", matchedRecords.length);
-            setPreviewData(matchedRecords);
-
-            if (matchedRecords.length === 0) {
-                toast({ title: "No Data", description: "No valid rows extracted.", variant: "warning" });
-            } else {
-                const matchedCount = matchedRecords.filter(r => r.status === 'matched').length;
-                toast({ title: "File Parsed", description: `Processed ${matchedRecords.length} rows. Found ${matchedCount} matches.` });
-            }
-
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
             toast({
-                title: "Error Parsing File",
-                description: "Errors occurred during processing. Check console.",
+                title: "Processing Failed",
+                description: error.message || "An error occurred.",
                 variant: "destructive"
             });
         } finally {
             setProcessing(false);
-            e.target.value = ''; // Reset input
         }
     };
 
-    // 3. Commit Updates
     const handleImport = async () => {
         if (!firestore) return;
         setUploading(true);
 
         try {
-            const batch = writeBatch(firestore);
             const matched = previewData.filter(r => r.status === 'matched' && r.loadId);
-
-            // Firestore limit is 500 ops per batch.
             const BATCH_SIZE = 450;
-            const recordsToUpdate = matched;
-
             let batchIndex = 0;
-            while (batchIndex < recordsToUpdate.length) {
-                const batchChunk = recordsToUpdate.slice(batchIndex, batchIndex + BATCH_SIZE);
+
+            while (batchIndex < matched.length) {
+                const batchChunk = matched.slice(batchIndex, batchIndex + BATCH_SIZE);
                 const currentBatch = writeBatch(firestore);
 
                 batchChunk.forEach(record => {
                     if (!record.loadId) return;
-                    const loadRef = doc(firestore, 'loads', record.loadId);
+                    const loadRef = doc(firestore, `companies/${companyId}/loads`, record.loadId);
+
+                    // We only update the factoringFee with the full prorated cost.
+                    // Advance amounts from the page are sometimes handled differently in settlement,
+                    // but we can update it if the user wants. The requirements say:
+                    // "Analyze the files and come up with a based way to calculate the factoring fees"
                     currentBatch.update(loadRef, {
-                        advance: record.advance,
-                        factoringFee: record.factoringFee
+                        factoringFee: Number(record.totalFactoringCost.toFixed(2)),
+                        advance: Number(record.totalAdvance.toFixed(2))
                     });
                 });
 
@@ -292,9 +290,10 @@ export default function FactoringPage() {
             });
 
             // Reset
-            setFile(null);
+            setAdvanceFile(null);
+            setAgingFile(null);
             setPreviewData([]);
-
+            setStats(null);
 
         } catch (error) {
             console.error(error);
@@ -308,129 +307,202 @@ export default function FactoringPage() {
         }
     };
 
-    const stats = {
-        total: previewData.length,
-        matched: previewData.filter(r => r.status === 'matched').length,
-        unmatched: previewData.filter(r => r.status === 'unmatched').length,
+    const formatCurrency = (val: number) => {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
     };
 
     return (
-        <div className="p-6 space-y-8 max-w-5xl mx-auto">
+        <div className="p-6 space-y-8 max-w-6xl mx-auto pb-24">
             <div className="flex flex-col gap-2">
-                <h1 className="text-3xl font-bold tracking-tight">Factoring Import</h1>
-                <p className="text-muted-foreground">Import Factoring Reports to update load financials.</p>
+                <h1 className="text-3xl font-bold tracking-tight">Factoring Integration</h1>
+                <p className="text-muted-foreground">Upload Advance Schedule and Aging Detail to accurately prorate factoring costs per load.</p>
             </div>
 
             {/* Upload Section */}
             {!previewData.length ? (
-                <Card className="border-dashed border-2">
-                    <CardHeader>
-                        <CardTitle>Upload Factoring Report</CardTitle>
-                        <CardDescription>Upload an Excel (.xlsx) file with columns: Invoice Number, Advance Amount, Total Fee</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-col items-center justify-center p-12 gap-4">
-                        <div className="p-4 bg-muted/50 rounded-full">
-                            <Upload className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                        <div className="flex flex-col items-center gap-2">
-                            <Button disabled={processing} className="relative">
-                                {processing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Scanning file...
-                                    </>
-                                ) : (
-                                    "Select Excel File"
-                                )}
-                                <input
-                                    type="file"
-                                    accept=".xlsx, .xls, .csv"
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                    onChange={handleFileUpload}
-                                    disabled={processing}
-                                />
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="space-y-6">
-                    {/* Stats */}
-                    <div className="grid grid-cols-3 gap-4">
-                        <Card>
-                            <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Rows</CardTitle></CardHeader>
-                            <CardContent className="p-4 pt-0"><div className="text-2xl font-bold">{stats.total}</div></CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Matched Loads</CardTitle></CardHeader>
-                            <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-green-600">{stats.matched}</div></CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Unmatched</CardTitle></CardHeader>
-                            <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-red-600">{stats.unmatched}</div></CardContent>
-                        </Card>
+                <div className="grid md:grid-cols-2 gap-6">
+                    <Card className="border-dashed border-2">
+                        <CardHeader>
+                            <CardTitle>1. Advance Schedule</CardTitle>
+                            <CardDescription>Required. PDF file with invoice transactions and admin/wire fees.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col items-center justify-center p-8 gap-4">
+                            <div className={`p-4 rounded-full ${advanceFile ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
+                                {advanceFile ? <FileText className="h-8 w-8" /> : <Upload className="h-8 w-8" />}
+                            </div>
+                            <div className="flex flex-col items-center gap-2">
+                                <Button variant={advanceFile ? "secondary" : "default"} className="relative">
+                                    {advanceFile ? advanceFile.name : "Select Advance PDF"}
+                                    <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        onChange={(e) => handleFileUpload('advance', e.target.files?.[0])}
+                                    />
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-dashed border-2">
+                        <CardHeader>
+                            <CardTitle>2. Aging Detail</CardTitle>
+                            <CardDescription>Optional but recommended. Links Invoices to Load Numbers.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col items-center justify-center p-8 gap-4">
+                            <div className={`p-4 rounded-full ${agingFile ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
+                                {agingFile ? <FileText className="h-8 w-8" /> : <Upload className="h-8 w-8" />}
+                            </div>
+                            <div className="flex flex-col items-center gap-2">
+                                <Button variant={agingFile ? "secondary" : "default"} className="relative">
+                                    {agingFile ? agingFile.name : "Select Aging PDF"}
+                                    <input
+                                        type="file"
+                                        accept="application/pdf"
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        onChange={(e) => handleFileUpload('aging', e.target.files?.[0])}
+                                    />
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <div className="md:col-span-2 flex justify-end">
+                        <Button size="lg" onClick={processFiles} disabled={processing || !advanceFile}>
+                            {processing ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                "Analyze & Match Data"
+                            )}
+                        </Button>
                     </div>
+                </div>
+            ) : (
+                <div className="space-y-6 slide-in-bottom">
+                    {/* Header Controls */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/30 p-4 rounded-lg border">
+                        <div className="flex items-center gap-4">
+                            <Button variant="outline" onClick={() => { setPreviewData([]); setAdvanceFile(null); setAgingFile(null); }}>
+                                Start Over
+                            </Button>
+                            <div className="text-sm">
+                                <span className="text-muted-foreground mr-2">Matched Loads:</span>
+                                <span className="font-semibold text-green-600">{stats?.matchedLoadsCount}</span>
+                                <span className="text-muted-foreground ml-4 mr-2">Unmatched:</span>
+                                <span className="font-semibold text-red-500">{stats?.unmatchedLoadsCount}</span>
+                            </div>
+                        </div>
+                        <Button size="lg" onClick={handleImport} disabled={uploading || stats?.matchedLoadsCount === 0}>
+                            {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Update {stats?.matchedLoadsCount} Firebase Loads
+                        </Button>
+                    </div>
+
+                    {/* Stats Cards */}
+                    {stats && (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Card>
+                                <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Invoiced Amount</CardTitle></CardHeader>
+                                <CardContent className="p-4 pt-0"><div className="text-2xl font-bold">{formatCurrency(stats.totalScheduleAmount)}</div></CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Prime Surcharge</CardTitle></CardHeader>
+                                <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalPrimeRate)}</div></CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Wire Fee</CardTitle></CardHeader>
+                                <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalWireFee)}</div></CardContent>
+                            </Card>
+                            <Card>
+                                <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-destructive/80">Total Factoring Cost</CardTitle></CardHeader>
+                                <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-destructive">{formatCurrency(stats.totalCost)}</div></CardContent>
+                            </Card>
+                        </div>
+                    )}
 
                     {/* Preview Table */}
                     <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle>Preview Data</CardTitle>
-                                <CardDescription>Review the matches before importing.</CardDescription>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => { setPreviewData([]); setFile(null); }}>Cancel</Button>
-                                <Button onClick={handleImport} disabled={uploading || stats.matched === 0}>
-                                    {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Import {stats.matched} Records
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Invoice #</TableHead>
-                                        <TableHead>Load Found</TableHead>
-                                        <TableHead className="text-right">Advance</TableHead>
-                                        <TableHead className="text-right">Factor Fee</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {previewData.slice(0, 50).map((row, i) => (
-                                        <TableRow key={i}>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="w-12"></TableHead>
+                                    <TableHead className="w-12">Match</TableHead>
+                                    <TableHead>Load Number</TableHead>
+                                    <TableHead className="text-right">Total Invoice</TableHead>
+                                    <TableHead className="text-right">Total Advance</TableHead>
+                                    <TableHead className="text-right text-destructive font-semibold">Total Cost</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {previewData.map(group => (
+                                    <React.Fragment key={group.loadNumber}>
+                                        <TableRow
+                                            className="hover:bg-muted/40 cursor-pointer transition-colors"
+                                            onClick={() => toggleRow(group.loadNumber)}
+                                        >
                                             <TableCell>
-                                                {row.status === 'matched' ? (
-                                                    <div className="flex items-center text-green-600 gap-2">
-                                                        <CheckCircle className="h-4 w-4" /> Matched
-                                                    </div>
+                                                {expandedRows.has(group.loadNumber) ? (
+                                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
                                                 ) : (
-                                                    <div className="flex items-center text-red-500 gap-2">
-                                                        <AlertCircle className="h-4 w-4" /> Unmatched
+                                                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                {group.status === 'matched' ? (
+                                                    <CheckCircle className="h-4 w-4 text-green-500" />
+                                                ) : (
+                                                    <div className="flex items-center gap-2" title="Load not found in database">
+                                                        <AlertCircle className="h-4 w-4 text-red-500" />
                                                     </div>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="font-medium">{row.invoiceId}</TableCell>
-                                            <TableCell className="text-muted-foreground">{row.loadNumber || '-'}</TableCell>
-                                            <TableCell className="text-right">
-                                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(row.advance)}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(row.factoringFee)}
+                                            <TableCell className="font-semibold">{group.loadNumber}</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(group.totalInvoiceAmount)}</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(group.totalAdvance)}</TableCell>
+                                            <TableCell className="text-right font-medium text-destructive">
+                                                {formatCurrency(group.totalFactoringCost)}
                                             </TableCell>
                                         </TableRow>
-                                    ))}
-                                    {previewData.length > 50 && (
-                                        <TableRow>
-                                            <TableCell colSpan={5} className="text-center text-muted-foreground">
-                                                ... and {previewData.length - 50} more rows
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
+
+                                        {expandedRows.has(group.loadNumber) && (
+                                            <TableRow className="bg-muted/10">
+                                                <TableCell colSpan={6} className="p-0 border-b">
+                                                    <div className="py-2 pl-24 pr-4 border-l-4 border-l-primary/30">
+                                                        <Table className="border rounded-md bg-background overflow-hidden">
+                                                            <TableHeader className="bg-muted/40">
+                                                                <TableRow>
+                                                                    <TableHead className="h-9 py-1 text-xs">Invoice #</TableHead>
+                                                                    <TableHead className="h-9 py-1 text-xs">Date</TableHead>
+                                                                    <TableHead className="h-9 py-1 text-xs text-right">Amount</TableHead>
+                                                                    <TableHead className="h-9 py-1 text-xs text-right">Txn Fee</TableHead>
+                                                                    <TableHead className="h-9 py-1 text-xs text-right">Share of Primer/Wire</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {group.invoices.map(inv => (
+                                                                    <TableRow key={inv.invoiceId}>
+                                                                        <TableCell className="py-2 text-sm font-medium">{inv.invoiceId}</TableCell>
+                                                                        <TableCell className="py-2 text-sm text-muted-foreground">{inv.invoiceDate}</TableCell>
+                                                                        <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.invoiceAmount)}</TableCell>
+                                                                        <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.transactionFee)}</TableCell>
+                                                                        <TableCell className="py-2 text-sm text-right text-muted-foreground">
+                                                                            {formatCurrency(inv.proratedPrimeWire)}
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </TableBody>
+                        </Table>
                     </Card>
                 </div>
             )}

@@ -12,7 +12,7 @@ import {
   orderBy,
   OrderByDirection,
 } from 'firebase/firestore';
-import { useFirestore } from './provider';
+import { useFirestore, useCompany } from './provider';
 import type { WithId } from '../lib/types';
 
 interface CollectionQuery<T> {
@@ -28,15 +28,19 @@ export function useCollection<T extends DocumentData>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const firestore = useFirestore();
+  const { companyId } = useCompany();
 
   const collectionQuery = useMemo(() => {
-    if (!firestore) return null;
+    if (!firestore || !companyId) return null;
 
     const { path, where: whereClause, orderBy: orderByClause } = typeof pathOrQuery === 'string'
       ? { path: pathOrQuery }
       : pathOrQuery;
 
-    let q: Query<DocumentData> = collection(firestore, path);
+    // Ensure backwards compatibility with explicit company paths but auto-scope others
+    const scopedPath = path.startsWith('companies/') ? path : `companies/${companyId}/${path}`;
+
+    let q: Query<DocumentData> = collection(firestore, scopedPath);
 
     if (whereClause) {
       if (Array.isArray(whereClause[0])) {
@@ -54,7 +58,7 @@ export function useCollection<T extends DocumentData>(
       q = query(q, orderBy(orderByClause[0], orderByClause[1]));
     }
     return q;
-  }, [firestore, pathOrQuery]);
+  }, [firestore, companyId, pathOrQuery]);
 
   useEffect(() => {
     if (!firestore) {

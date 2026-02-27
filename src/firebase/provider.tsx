@@ -2,7 +2,7 @@
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
-import { Firestore } from 'firebase/firestore';
+import { Firestore, doc, getDoc } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { Functions } from 'firebase/functions';
 import { FirebaseStorage } from 'firebase/storage';
@@ -22,6 +22,8 @@ interface UserAuthState {
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
+  companyId: string | null;
+  companyName: string | null;
 }
 
 // Combined state for the Firebase context
@@ -36,6 +38,8 @@ export interface FirebaseContextState {
   user: User | null;
   isUserLoading: boolean; // True during initial auth check
   userError: Error | null; // Error from auth listener
+  companyId: string | null;
+  companyName: string | null;
 }
 
 // Return type for useFirebase()
@@ -48,6 +52,8 @@ export interface FirebaseServicesAndUser {
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
+  companyId: string | null;
+  companyName: string | null;
 }
 
 // Return type for useUser() - specific to user auth state
@@ -75,29 +81,57 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     user: null,
     isUserLoading: true, // Start loading until first auth event
     userError: null,
+    companyId: null,
+    companyName: null,
   });
 
   // Effect to subscribe to Firebase auth state changes
   useEffect(() => {
-    if (!auth) { // If no Auth service instance, cannot determine user state
-      setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth service not provided.") });
+    if (!auth || !firestore) { // If no Auth/Firestore service instance, cannot determine user state
+      setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth/Firestore service not provided."), companyId: null, companyName: null });
       return;
     }
 
-    setUserAuthState({ user: null, isUserLoading: true, userError: null }); // Reset on auth instance change
+    setUserAuthState(prev => ({ ...prev, isUserLoading: true, userError: null })); // Reset on auth instance change
 
     const unsubscribe = onAuthStateChanged(
       auth,
-      (firebaseUser) => { // Auth state determined
-        setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
+      async (firebaseUser) => { // Auth state determined
+        if (firebaseUser) {
+          try {
+            // Fetch user profile to get companyId
+            const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+            const userDoc = await getDoc(userDocRef);
+            let companyId = null;
+            let companyName = null;
+
+            if (userDoc.exists()) {
+              companyId = userDoc.data()?.companyId || null;
+              if (companyId) {
+                const compDocRef = doc(firestore, 'companies', companyId);
+                const compDoc = await getDoc(compDocRef);
+                if (compDoc.exists()) {
+                  companyName = compDoc.data()?.name || null;
+                }
+              }
+            }
+
+            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null, companyId, companyName });
+          } catch (error: any) {
+            console.error("Error fetching user profile:", error);
+            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: error, companyId: null, companyName: null });
+          }
+        } else {
+          setUserAuthState({ user: null, isUserLoading: false, userError: null, companyId: null, companyName: null });
+        }
       },
       (error) => { // Auth listener error
         console.error("FirebaseProvider: onAuthStateChanged error:", error);
-        setUserAuthState({ user: null, isUserLoading: false, userError: error });
+        setUserAuthState({ user: null, isUserLoading: false, userError: error, companyId: null, companyName: null });
       }
     );
     return () => unsubscribe(); // Cleanup
-  }, [auth]); // Depends on the auth instance
+  }, [auth, firestore]); // Depends on the auth and firestore instances
 
   // Memoize the context value
   const contextValue = useMemo((): FirebaseContextState => {
@@ -112,6 +146,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       user: userAuthState.user,
       isUserLoading: userAuthState.isUserLoading,
       userError: userAuthState.userError,
+      companyId: userAuthState.companyId,
+      companyName: userAuthState.companyName,
     };
   }, [firebaseApp, firestore, auth, functions, storage, userAuthState]);
 
@@ -147,6 +183,8 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     user: context.user,
     isUserLoading: context.isUserLoading,
     userError: context.userError,
+    companyId: context.companyId,
+    companyName: context.companyName,
   };
 };
 
@@ -202,4 +240,19 @@ export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | 
 export const useUser = (): UserHookResult => {
   const { user, isUserLoading, userError } = useFirebase();
   return { user, isUserLoading, userError };
+};
+
+export interface CompanyHookResult {
+  companyId: string | null;
+  companyName: string | null;
+  isUserLoading: boolean;
+}
+
+/**
+ * Hook specifically for accessing the authenticated user's assigned company.
+ * @returns {CompanyHookResult} Object with companyId and companyName.
+ */
+export const useCompany = (): CompanyHookResult => {
+  const { companyId, companyName, isUserLoading } = useFirebase();
+  return { companyId, companyName, isUserLoading };
 };

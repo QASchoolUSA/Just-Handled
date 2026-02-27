@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useAuth, useFirestore } from '@/firebase/provider';
+import { useUser, useAuth, useFirestore, useCompany } from '@/firebase/provider';
 import { updateProfile, updateEmail } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
@@ -24,6 +24,7 @@ type ProfileFormValues = z.infer<typeof formSchema>;
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
+  const { companyName } = useCompany();
   const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -130,6 +131,12 @@ export default function ProfilePage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <FormLabel>Company</FormLabel>
+                  <Input disabled value={companyName || 'Loading...'} className="bg-muted text-muted-foreground" />
+                </div>
+              </div>
               <FormField
                 control={form.control}
                 name="displayName"

@@ -27,13 +27,15 @@ const BlockingLoadingModal = dynamic(() => import('@/components/blocking-loading
 
 import type { Driver } from '@/lib/types';
 import { formatCurrency, toTitleCase, formatPhoneNumber } from '@/lib/utils';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCompany } from '@/firebase/provider';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export default function DriversPage() {
   const firestore = useFirestore();
-  const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
+  const { companyId } = useCompany();
+  const driversCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
   // IMPORTANT: We now destructure 'error' to show it.
   const { data: drivers, loading, error } = useCollection<Driver>(driversCollection);
 
@@ -211,7 +213,7 @@ export default function DriversPage() {
               }
             }));
 
-            setImportResult({ success: successCount, errors });
+            setImportResult({ successCount, errors, skippedCount: 0 });
             setIsImportResultOpen(true);
 
             // Reset file input
@@ -238,7 +240,7 @@ export default function DriversPage() {
     try {
       if (editingDriver) {
         // Update
-        const driverDoc = doc(firestore, 'drivers', editingDriver.id);
+        const driverDoc = doc(firestore, `companies/${companyId}/drivers`, editingDriver.id);
         await setDocumentNonBlocking(driverDoc, {
           firstName: driverData.firstName,
           lastName: driverData.lastName,
@@ -446,7 +448,7 @@ export default function DriversPage() {
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
             <DialogDescription>
-              {importResult?.success} drivers imported successfully.
+              {importResult?.successCount} drivers imported successfully.
               {importResult?.errors && importResult.errors.length > 0 && ` ${importResult.errors.length} rows failed.`}
             </DialogDescription>
           </DialogHeader>

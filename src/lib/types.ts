@@ -1,5 +1,20 @@
 export type WithId<T> = T & { id: string };
 
+export type Company = {
+  id?: string;
+  name: string;
+  createdAt?: any; // Firestore Timestamp
+};
+
+export type UserProfile = {
+  id?: string;
+  email: string;
+  displayName?: string;
+  companyId: string;
+  role?: string;
+  createdAt?: any;
+};
+
 export type Driver = {
   id: string;
   firstName: string;

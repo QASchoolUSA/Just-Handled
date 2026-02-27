@@ -22,7 +22,8 @@ const BlockingLoadingModal = dynamic(() => import('@/components/blocking-loading
 
 import type { Owner, Driver } from '@/lib/types';
 import { formatCurrency, toTitleCase } from '@/lib/utils';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCompany } from '@/firebase/provider';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import Papa from 'papaparse';
@@ -31,10 +32,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function OwnersPage() {
     const firestore = useFirestore();
-    const ownersCollection = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
+    const { companyId } = useCompany();
+    const ownersCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/owners`) : null, [firestore, companyId]);
     const { data: owners, loading: ownersLoading, error: ownersError } = useCollection<Owner>(ownersCollection);
 
-    const driversCollection = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
+    const driversCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
     const { data: drivers, loading: driversLoading } = useCollection<Driver>(driversCollection);
 
     const loading = ownersLoading || driversLoading;
@@ -95,8 +97,8 @@ export default function OwnersPage() {
     };
 
     const handleDeleteOwner = async (ownerId: string) => {
-        if (firestore && confirm('Are you sure you want to delete this owner?')) {
-            const ownerDoc = doc(firestore, 'owners', ownerId);
+        if (firestore && companyId && confirm('Are you sure you want to delete this owner?')) {
+            const ownerDoc = doc(firestore, `companies/${companyId}/owners`, ownerId);
             deleteDocumentNonBlocking(ownerDoc);
         }
     };
@@ -224,7 +226,7 @@ export default function OwnersPage() {
         };
 
         if (editingOwner) {
-            const ownerDoc = doc(firestore, 'owners', editingOwner.id);
+            const ownerDoc = doc(firestore, `companies/${companyId}/owners`, editingOwner.id);
             setDocumentNonBlocking(ownerDoc, dataToSave, { merge: true });
         } else {
             if (ownersCollection) {

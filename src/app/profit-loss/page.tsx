@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/popover";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
+import { useCompany } from "@/firebase/provider";
 import { collection, query, where } from "firebase/firestore";
 import type { Load, Expense, Driver, Owner } from "@/lib/types";
 import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
@@ -21,6 +22,7 @@ import Link from "next/link";
 
 export default function ProfitLossPage() {
     const firestore = useFirestore();
+    const { companyId } = useCompany();
 
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: startOfDay(subMonths(new Date(), 1)),
@@ -48,31 +50,31 @@ export default function ProfitLossPage() {
     const toStr = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '';
 
     const loadsQuery = useMemoFirebase(() => {
-        if (!firestore) return null;
+        if (!firestore || !companyId) return null;
         if (fromStr && toStr) {
             return query(
-                collection(firestore, 'loads'),
+                collection(firestore, `companies/${companyId}/loads`),
                 where('deliveryDate', '>=', fromStr),
                 where('deliveryDate', '<=', toStr)
             );
         }
-        return collection(firestore, 'loads');
-    }, [firestore, fromStr, toStr]);
+        return collection(firestore, `companies/${companyId}/loads`);
+    }, [firestore, companyId, fromStr, toStr]);
 
     const expensesQuery = useMemoFirebase(() => {
-        if (!firestore) return null;
+        if (!firestore || !companyId) return null;
         if (fromStr && toStr) {
             return query(
-                collection(firestore, 'expenses'),
+                collection(firestore, `companies/${companyId}/expenses`),
                 where('date', '>=', fromStr),
                 where('date', '<=', toStr + 'T23:59:59.999Z')
             );
         }
-        return collection(firestore, 'expenses');
-    }, [firestore, fromStr, toStr]);
+        return collection(firestore, `companies/${companyId}/expenses`);
+    }, [firestore, companyId, fromStr, toStr]);
 
-    const driversQuery = useMemoFirebase(() => firestore ? collection(firestore, 'drivers') : null, [firestore]);
-    const ownersQuery = useMemoFirebase(() => firestore ? collection(firestore, 'owners') : null, [firestore]);
+    const driversQuery = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
+    const ownersQuery = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/owners`) : null, [firestore, companyId]);
 
     const { data: loads, loading: loadsLoading } = useCollection<Load>(loadsQuery);
     const { data: expenses, loading: expensesLoading } = useCollection<Expense>(expensesQuery);

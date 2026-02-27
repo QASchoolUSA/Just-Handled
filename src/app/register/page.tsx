@@ -3,23 +3,28 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { useAuth, useUser } from '@/firebase/provider';
+import { useAuth, useUser, useFirestore } from '@/firebase/provider';
+import { doc, setDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Truck, Loader2 } from 'lucide-react';
+import { UserPlus, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 export default function RegisterPage() {
     const [name, setName] = React.useState('');
+    const [companyName, setCompanyName] = React.useState('');
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
     const [confirmPassword, setConfirmPassword] = React.useState('');
+    const [showPassword, setShowPassword] = React.useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
     const router = useRouter();
     const auth = useAuth();
+    const firestore = useFirestore();
     const { user } = useUser();
     const { toast } = useToast();
 
@@ -32,7 +37,7 @@ export default function RegisterPage() {
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!name || !email || !password || !confirmPassword) {
+        if (!name || !companyName || !email || !password || !confirmPassword) {
             toast({
                 variant: "destructive",
                 title: "Missing Fields",
@@ -67,6 +72,32 @@ export default function RegisterPage() {
                 displayName: name,
             });
 
+            if (firestore) {
+                // Create Company Document
+                const companiesRef = collection(firestore, 'companies');
+                const newCompanyRef = doc(companiesRef);
+                await setDoc(newCompanyRef, {
+                    name: companyName,
+                    createdAt: serverTimestamp()
+                });
+
+                // Create User Profile Document linking to the Company
+                const userRef = doc(firestore, 'users', userCredential.user.uid);
+                await setDoc(userRef, {
+                    email: email,
+                    displayName: name,
+                    companyId: newCompanyRef.id,
+                    role: 'admin',
+                    createdAt: serverTimestamp()
+                });
+            }
+
+            // Force firebase to reload the user object so the new displayName is registered
+            // before we redirect them to the dashboard where it is rendered.
+            if (auth.currentUser) {
+                await auth.currentUser.reload();
+            }
+
             toast({
                 title: "Registration Successful",
                 description: "Welcome to Just Handled!",
@@ -100,8 +131,8 @@ export default function RegisterPage() {
         <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
             <Card className="w-full max-w-md border-border/50 shadow-lg">
                 <CardHeader className="space-y-1 flex flex-col items-center text-center">
-                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center text-white shadow-lg shadow-primary/20 mb-4">
-                        <Truck className="h-7 w-7" />
+                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-teal-500/20 mb-4">
+                        <UserPlus className="h-7 w-7" />
                     </div>
                     <CardTitle className="font-display text-2xl font-bold">Create Account</CardTitle>
                     <CardDescription>
@@ -124,6 +155,19 @@ export default function RegisterPage() {
                             />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="companyName">Company Name</Label>
+                            <Input
+                                id="companyName"
+                                type="text"
+                                placeholder="Arba Express"
+                                value={companyName}
+                                onChange={(e) => setCompanyName(e.target.value)}
+                                required
+                                disabled={loading}
+                                className="h-11"
+                            />
+                        </div>
+                        <div className="space-y-2">
                             <Label htmlFor="email">Email</Label>
                             <Input
                                 id="email"
@@ -138,27 +182,45 @@ export default function RegisterPage() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                disabled={loading}
-                                className="h-11"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="password"
+                                    type={showPassword ? "text" : "password"}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    disabled={loading}
+                                    className="h-11 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="confirmPassword">Confirm Password</Label>
-                            <Input
-                                id="confirmPassword"
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                required
-                                disabled={loading}
-                                className="h-11"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="confirmPassword"
+                                    type={showConfirmPassword ? "text" : "password"}
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    required
+                                    disabled={loading}
+                                    className="h-11 pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
                         </div>
                         <Button type="submit" className="w-full h-11 text-base rounded-xl" disabled={loading}>
                             {loading ? (
