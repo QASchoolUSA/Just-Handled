@@ -17,6 +17,7 @@ import { useFirestore } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
 import { collection, getDocs, query, where, writeBatch, doc } from "firebase/firestore";
 import type { Load } from "@/lib/types";
+import * as Papa from "papaparse";
 
 // --- Types ---
 
@@ -55,10 +56,6 @@ export default function FactoringPage() {
     const { toast } = useToast();
     const firestore = useFirestore();
     const { companyId } = useCompany();
-
-    const [advanceFile, setAdvanceFile] = useState<File | null>(null);
-    const [agingFile, setAgingFile] = useState<File | null>(null);
-
     const [previewData, setPreviewData] = useState<LoadGroup[]>([]);
     const [stats, setStats] = useState<GlobalStats | null>(null);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -76,181 +73,190 @@ export default function FactoringPage() {
         setExpandedRows(newExpanded);
     };
 
-    const handleFileUpload = (type: 'advance' | 'aging', file: File | undefined) => {
+    const handleDownloadTemplate = () => {
+        const csvData = [
+            ['Load Number', 'Invoice Number', 'Invoice Date', 'Invoice Amount', 'Advance Amount', 'Transaction Fee', 'Prime Surcharge', 'Wire Fee'],
+            ['1001A', 'IN-00123', '03/01/2026', '5000', '4950', '50', '15', '25'],
+            ['1002B', 'IN-00124', '03/01/2026', '2000', '1980', '20', '', ''],
+            ['1003C', 'IN-00125', '03/02/2026', '3500', '3465', '35', '', ''],
+        ];
+        const csv = Papa.unparse(csvData);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'factoring_import_template.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        if (type === 'advance') setAdvanceFile(file);
-        if (type === 'aging') setAgingFile(file);
-    };
-
-    const parsePdfText = async (file: File): Promise<string> => {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
-        if (!res.ok) {
-            throw new Error(`Failed to parse ${file.name}`);
-        }
-        const data = await res.json();
-        return data.text;
-    };
-
-    const processFiles = async () => {
-        if (!advanceFile) {
-            toast({ title: "Missing File", description: "Please upload the Advance Schedule PDF.", variant: "destructive" });
-            return;
-        }
 
         setProcessing(true);
-        try {
-            toast({ title: "Parsing PDFs...", description: "Extracting text from documents." });
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                try {
+                    toast({ title: "Parsing CSV...", description: "Extracting factoring data." });
+                    const rows = results.data as any[];
 
-            const advanceText = await parsePdfText(advanceFile);
-            const agingText = agingFile ? await parsePdfText(agingFile) : '';
+                    const invoicesToProcess: any[] = [];
+                    const loadMappingCsv = new Map<string, string>();
 
-            // 1. Extract Advance Schedule Invoices
-            const advanceInvoices: any[] = [];
-            // Matches: [Customer Name?] IN-003458 02/24/2026 $4,000.00 $40.00 $40.00 $3,920.00
-            const advanceRegex = /(IN-\d+(?:-[A-Za-z])?|\d{4,})\s+(\d{2}\/\d{2}\/\d{4})\s+\$([\d,.]+)\s+\$([\d,.]+)\s+\$([\d,.]+)\s+\$([\d,.]+)/g;
-            let match;
-            let totalScheduleAmount = 0;
+                    let primeFee = 0;
+                    let wireFee = 0;
+                    let totalScheduleAmount = 0;
 
-            while ((match = advanceRegex.exec(advanceText)) !== null) {
-                const invoiceId = match[1];
-                const date = match[2];
-                const amount = parseFloat(match[3].replace(/,/g, ''));
-                const reserve = parseFloat(match[4].replace(/,/g, ''));
-                const fee = parseFloat(match[5].replace(/,/g, ''));
+                    for (const row of rows) {
+                        const invId = row['Invoice Number']?.trim();
+                        const loadNum = row['Load Number']?.trim();
+                        if (!invId) continue;
 
-                advanceInvoices.push({ invoiceId, date, amount, reserve, fee });
-                totalScheduleAmount += amount;
-            }
+                        if (loadNum) loadMappingCsv.set(invId, loadNum);
 
-            if (advanceInvoices.length === 0) {
-                toast({ title: "Parse Error", description: "Could not find any invoices in the Advance Schedule.", variant: "destructive" });
-                setProcessing(false);
-                return;
-            }
+                        const amount = parseFloat(row['Invoice Amount']) || 0;
+                        const advance = parseFloat(row['Advance Amount']) || 0;
+                        const fee = parseFloat(row['Transaction Fee']) || 0;
 
-            // Extract Prime Rate and Wire Fee
-            const primeMatch = advanceText.match(/Prime rate surcharge\s+\$([\d,.]+)/i);
-            const wireMatch = advanceText.match(/Wire fee\s+\$([\d,.]+)/i);
+                        // Parse global fees from any row that includes them
+                        const rowPrime = parseFloat(row['Prime Surcharge']) || 0;
+                        const rowWire = parseFloat(row['Wire Fee']) || 0;
+                        if (rowPrime > 0) primeFee += rowPrime;
+                        if (rowWire > 0) wireFee += rowWire;
 
-            const primeFee = primeMatch ? parseFloat(primeMatch[1].replace(/,/g, '')) : 0;
-            const wireFee = wireMatch ? parseFloat(wireMatch[1].replace(/,/g, '')) : 0;
-            const totalOtherCharges = primeFee + wireFee;
-
-            // 2. Extract Aging Detail Mappings (Invoice -> Load)
-            const loadMapping = new Map<string, string>();
-            if (agingText) {
-                // Matches: IN-003191 383862 $1,500.00 $1,485.00 01/30/2026 26
-                const agingRegex = /(IN-\d+(?:-[A-Za-z])?|\d{4,})\s+([A-Za-z0-9-]+)\s+\$([\d,.]+)\s+\$([\d,.]+)/g;
-                while ((match = agingRegex.exec(agingText)) !== null) {
-                    const invoiceId = match[1];
-                    const loadNumber = match[2];
-                    loadMapping.set(invoiceId, loadNumber);
-                }
-            }
-
-            // 3. Query Firestore
-            toast({ title: "Matching Loads...", description: "Querying database for matches." });
-
-            const allInvoiceIds = advanceInvoices.map(i => i.invoiceId);
-            const allMappedLoadNumbers = Array.from(new Set(Array.from(loadMapping.values())));
-
-            const loadMapByNum = new Map<string, Load & { id: string }>();
-            const loadMapByInv = new Map<string, Load & { id: string }>();
-
-            if (firestore) {
-                // Chunk queries (max 30 for 'in' clause)
-                const fetchChunks = async (field: 'loadNumber' | 'invoiceId', values: string[], mapFunc: (load: Load & { id: string }) => void) => {
-                    for (let i = 0; i < values.length; i += 30) {
-                        const chunk = values.slice(i, i + 30);
-                        if (chunk.length === 0) continue;
-                        const q = query(collection(firestore, `companies/${companyId}/loads`), where(field, 'in', chunk));
-                        const snap = await getDocs(q);
-                        snap.forEach(doc => {
-                            mapFunc({ ...doc.data() as Load, id: doc.id });
+                        invoicesToProcess.push({
+                            invoiceId: invId,
+                            date: row['Invoice Date']?.trim() || new Date().toLocaleDateString(),
+                            amount,
+                            reserve: amount - advance - fee, // Calculate derived reserve manually
+                            fee,
+                            advance // Pass raw advance
                         });
+                        totalScheduleAmount += amount;
                     }
-                };
 
-                await Promise.all([
-                    fetchChunks('loadNumber', allMappedLoadNumbers, (load) => loadMapByNum.set(load.loadNumber, load)),
-                    fetchChunks('invoiceId', allInvoiceIds, (load) => loadMapByInv.set(load.invoiceId, load))
-                ]);
-            }
+                    if (invoicesToProcess.length === 0) {
+                        throw new Error("No valid invoices found in CSV. Missing 'Invoice Number'.");
+                    }
 
-            // 4. Combine and group by Load Number
-            const loadsMap = new Map<string, LoadGroup>();
-
-            for (const inv of advanceInvoices) {
-                const agLoadNum = loadMapping.get(inv.invoiceId);
-
-                let foundLoad: (Load & { id: string }) | null = null;
-                if (agLoadNum && loadMapByNum.has(agLoadNum)) {
-                    foundLoad = loadMapByNum.get(agLoadNum)!;
-                } else if (loadMapByInv.has(inv.invoiceId)) {
-                    foundLoad = loadMapByInv.get(inv.invoiceId)!;
+                    await buildPreviewData(invoicesToProcess, loadMappingCsv, primeFee, wireFee, totalScheduleAmount);
+                    if (e.target) e.target.value = ''; // Reset input
+                } catch (error: any) {
+                    toast({ title: "CSV Error", description: error.message, variant: "destructive" });
+                    setProcessing(false);
                 }
+            },
+            error: (err) => {
+                toast({ title: "Parse Error", description: "Failed to read CSV file.", variant: "destructive" });
+                setProcessing(false);
+            }
+        });
+    };
 
-                const effectiveLoadNumber = foundLoad ? foundLoad.loadNumber : (agLoadNum || `Unknown (${inv.invoiceId})`);
+    // Shared generic function for building the UI from either PDF OR CSV Array!
+    const buildPreviewData = async (
+        invoices: any[],
+        loadMapping: Map<string, string>,
+        primeFee: number,
+        wireFee: number,
+        totalScheduleAmount: number
+    ) => {
+        const totalOtherCharges = primeFee + wireFee;
 
-                const proratedOther = totalScheduleAmount > 0
-                    ? (inv.amount / totalScheduleAmount) * totalOtherCharges
-                    : 0;
-                const totalCost = inv.fee + proratedOther;
+        // 3. Query Firestore
+        toast({ title: "Matching Loads...", description: "Querying database for matches." });
 
-                if (!loadsMap.has(effectiveLoadNumber)) {
-                    loadsMap.set(effectiveLoadNumber, {
-                        loadNumber: effectiveLoadNumber,
-                        loadId: foundLoad ? foundLoad.id : null,
-                        status: foundLoad ? 'matched' : 'unmatched',
-                        invoices: [],
-                        totalInvoiceAmount: 0,
-                        totalFactoringCost: 0,
-                        totalAdvance: 0
+        const allInvoiceIds = invoices.map(i => i.invoiceId);
+        const allMappedLoadNumbers = Array.from(new Set(Array.from(loadMapping.values())));
+
+        const loadMapByNum = new Map<string, Load & { id: string }>();
+        const loadMapByInv = new Map<string, Load & { id: string }>();
+
+        if (firestore) {
+            // Chunk queries (max 30 for 'in' clause)
+            const fetchChunks = async (field: 'loadNumber' | 'invoiceId', values: string[], mapFunc: (load: Load & { id: string }) => void) => {
+                for (let i = 0; i < values.length; i += 30) {
+                    const chunk = values.slice(i, i + 30);
+                    if (chunk.length === 0) continue;
+                    const q = query(collection(firestore, `companies/${companyId}/loads`), where(field, 'in', chunk));
+                    const snap = await getDocs(q);
+                    snap.forEach(docSnap => {
+                        mapFunc({ ...docSnap.data() as Load, id: docSnap.id });
                     });
                 }
+            };
 
-                const group = loadsMap.get(effectiveLoadNumber)!;
-                group.invoices.push({
-                    invoiceId: inv.invoiceId,
-                    invoiceDate: inv.date,
-                    invoiceAmount: inv.amount,
-                    reserveAmount: inv.reserve,
-                    transactionFee: inv.fee,
-                    proratedPrimeWire: proratedOther,
-                    totalFactoringCost: totalCost
-                });
-                group.totalInvoiceAmount += inv.amount;
-                group.totalFactoringCost += totalCost;
-                group.totalAdvance += (inv.amount - inv.reserve - inv.fee);
+            await Promise.all([
+                fetchChunks('loadNumber', allMappedLoadNumbers, (load) => loadMapByNum.set(load.loadNumber, load)),
+                fetchChunks('invoiceId', allInvoiceIds, (load) => loadMapByInv.set(load.invoiceId, load))
+            ]);
+        }
+
+        // 4. Combine and group by Load Number
+        const loadsMap = new Map<string, LoadGroup>();
+
+        for (const inv of invoices) {
+            const agLoadNum = loadMapping.get(inv.invoiceId);
+
+            let foundLoad: (Load & { id: string }) | null = null;
+            if (agLoadNum && loadMapByNum.has(agLoadNum)) {
+                foundLoad = loadMapByNum.get(agLoadNum)!;
+            } else if (loadMapByInv.has(inv.invoiceId)) {
+                foundLoad = loadMapByInv.get(inv.invoiceId)!;
             }
 
-            const finalPreviewData = Array.from(loadsMap.values());
+            const effectiveLoadNumber = foundLoad ? foundLoad.loadNumber : (agLoadNum || `Unknown (${inv.invoiceId})`);
 
-            setPreviewData(finalPreviewData);
-            setStats({
-                totalScheduleAmount,
-                totalPrimeRate: primeFee,
-                totalWireFee: wireFee,
-                matchedLoadsCount: finalPreviewData.filter(g => g.status === 'matched').length,
-                unmatchedLoadsCount: finalPreviewData.filter(g => g.status === 'unmatched').length,
-                totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
+            const proratedOther = totalScheduleAmount > 0
+                ? (inv.amount / totalScheduleAmount) * totalOtherCharges
+                : 0;
+            const totalCost = inv.fee + proratedOther;
+
+            if (!loadsMap.has(effectiveLoadNumber)) {
+                loadsMap.set(effectiveLoadNumber, {
+                    loadNumber: effectiveLoadNumber,
+                    loadId: foundLoad ? foundLoad.id : null,
+                    status: foundLoad ? 'matched' : 'unmatched',
+                    invoices: [],
+                    totalInvoiceAmount: 0,
+                    totalFactoringCost: 0,
+                    totalAdvance: 0
+                });
+            }
+
+            const group = loadsMap.get(effectiveLoadNumber)!;
+            group.invoices.push({
+                invoiceId: inv.invoiceId,
+                invoiceDate: inv.date,
+                invoiceAmount: inv.amount,
+                reserveAmount: inv.reserve,
+                transactionFee: inv.fee,
+                proratedPrimeWire: proratedOther,
+                totalFactoringCost: totalCost
             });
-
-            toast({ title: "Success", description: `Prepared ${finalPreviewData.length} load records.` });
-
-        } catch (error: any) {
-            console.error(error);
-            toast({
-                title: "Processing Failed",
-                description: error.message || "An error occurred.",
-                variant: "destructive"
-            });
-        } finally {
-            setProcessing(false);
+            group.totalInvoiceAmount += inv.amount;
+            group.totalFactoringCost += totalCost;
+            group.totalAdvance += (inv.advance !== undefined ? inv.advance : (inv.amount - inv.reserve - inv.fee));
         }
+
+        const finalPreviewData = Array.from(loadsMap.values());
+
+        setPreviewData(finalPreviewData);
+        setStats({
+            totalScheduleAmount,
+            totalPrimeRate: primeFee,
+            totalWireFee: wireFee,
+            matchedLoadsCount: finalPreviewData.filter(g => g.status === 'matched').length,
+            unmatchedLoadsCount: finalPreviewData.filter(g => g.status === 'unmatched').length,
+            totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
+        });
+
+        toast({ title: "Success", description: `Prepared ${finalPreviewData.length} load records.` });
+        setProcessing(false);
     };
 
     const handleImport = async () => {
@@ -290,8 +296,6 @@ export default function FactoringPage() {
             });
 
             // Reset
-            setAdvanceFile(null);
-            setAgingFile(null);
             setPreviewData([]);
             setStats(null);
 
@@ -315,77 +319,43 @@ export default function FactoringPage() {
         <div className="p-6 space-y-8 max-w-6xl mx-auto pb-24">
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold tracking-tight">Factoring Integration</h1>
-                <p className="text-muted-foreground">Upload Advance Schedule and Aging Detail to accurately prorate factoring costs per load.</p>
+                <p className="text-muted-foreground">Import Factoring advances via scheduled Template CSV to accurately prorate factoring costs per load.</p>
             </div>
 
             {/* Upload Section */}
             {!previewData.length ? (
-                <div className="grid md:grid-cols-2 gap-6">
-                    <Card className="border-dashed border-2">
-                        <CardHeader>
-                            <CardTitle>1. Advance Schedule</CardTitle>
-                            <CardDescription>Required. PDF file with invoice transactions and admin/wire fees.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex flex-col items-center justify-center p-8 gap-4">
-                            <div className={`p-4 rounded-full ${advanceFile ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
-                                {advanceFile ? <FileText className="h-8 w-8" /> : <Upload className="h-8 w-8" />}
-                            </div>
-                            <div className="flex flex-col items-center gap-2">
-                                <Button variant={advanceFile ? "secondary" : "default"} className="relative">
-                                    {advanceFile ? advanceFile.name : "Select Advance PDF"}
-                                    <input
-                                        type="file"
-                                        accept="application/pdf"
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                        onChange={(e) => handleFileUpload('advance', e.target.files?.[0])}
-                                    />
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="border-dashed border-2">
-                        <CardHeader>
-                            <CardTitle>2. Aging Detail</CardTitle>
-                            <CardDescription>Optional but recommended. Links Invoices to Load Numbers.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex flex-col items-center justify-center p-8 gap-4">
-                            <div className={`p-4 rounded-full ${agingFile ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
-                                {agingFile ? <FileText className="h-8 w-8" /> : <Upload className="h-8 w-8" />}
-                            </div>
-                            <div className="flex flex-col items-center gap-2">
-                                <Button variant={agingFile ? "secondary" : "default"} className="relative">
-                                    {agingFile ? agingFile.name : "Select Aging PDF"}
-                                    <input
-                                        type="file"
-                                        accept="application/pdf"
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                        onChange={(e) => handleFileUpload('aging', e.target.files?.[0])}
-                                    />
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <div className="md:col-span-2 flex justify-end">
-                        <Button size="lg" onClick={processFiles} disabled={processing || !advanceFile}>
-                            {processing ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Processing...
-                                </>
-                            ) : (
-                                "Analyze & Match Data"
-                            )}
-                        </Button>
-                    </div>
-                </div>
+                <Card className="border-dashed border-2">
+                    <CardHeader className="text-center">
+                        <CardTitle>Import Factoring Advances</CardTitle>
+                        <CardDescription>Download the template, fill in your advances and fees, and upload the CSV to sync with your loads.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center justify-center py-12 gap-6">
+                        <div className="p-6 rounded-full bg-primary/10 text-primary">
+                            <Upload className="h-12 w-12" />
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl h-12 px-6">
+                                <FileText className="mr-2 h-4 w-4" /> Download Template
+                            </Button>
+                            <Button className="rounded-xl h-12 px-6 relative overflow-hidden" disabled={processing}>
+                                {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                {processing ? "Parsing CSV..." : "Select Import CSV"}
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    onChange={handleCsvUpload}
+                                />
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
             ) : (
                 <div className="space-y-6 slide-in-bottom">
                     {/* Header Controls */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/30 p-4 rounded-lg border">
                         <div className="flex items-center gap-4">
-                            <Button variant="outline" onClick={() => { setPreviewData([]); setAdvanceFile(null); setAgingFile(null); }}>
+                            <Button variant="outline" onClick={() => { setPreviewData([]); }}>
                                 Start Over
                             </Button>
                             <div className="text-sm">
