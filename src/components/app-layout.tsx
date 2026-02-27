@@ -182,11 +182,17 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
-                      <Sparkles className="h-4 w-4 text-amber-500" />
-                      Upgrade to Pro
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+                    {company?.subscription?.plan !== 'pro' && (
+                      <>
+                        <DropdownMenuItem asChild className="gap-2 rounded-lg cursor-pointer">
+                          <Link href="/subscribe" onClick={handleLinkClick}>
+                            <Sparkles className="h-4 w-4 text-amber-500" />
+                            <span>Upgrade to Pro</span>
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     <DropdownMenuItem asChild className="gap-2 rounded-lg cursor-pointer">
                       <Link href="/profile" onClick={handleLinkClick}>
                         <Users className="h-4 w-4" />
