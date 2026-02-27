@@ -55,7 +55,7 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
   const { setTheme } = useTheme()
   const pathname = usePathname();
   const { user } = useUser();
-  const { companyName } = useCompany();
+  const { companyName, company } = useCompany();
   const auth = useAuth();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -148,7 +148,11 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                       <span className="truncate font-semibold">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
-                      <span className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</span>
+                      <span className="truncate text-xs text-muted-foreground capitalize">
+                        {company?.subscription?.plan === 'pro'
+                          ? 'Pro Plan'
+                          : `${Math.max(0, Math.ceil(((company?.subscription?.trialEndsAt || 0) - Date.now()) / (1000 * 60 * 60 * 24)))} Days Left`}
+                      </span>
                     </div>
                     <MoreHorizontal className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
                   </SidebarMenuButton>
@@ -168,7 +172,11 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
                         <span className="truncate font-semibold">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
-                        <span className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</span>
+                        <span className="truncate text-xs text-muted-foreground capitalize">
+                          {company?.subscription?.plan === 'pro'
+                            ? 'Pro Plan'
+                            : `${Math.max(0, Math.ceil(((company?.subscription?.trialEndsAt || 0) - Date.now()) / (1000 * 60 * 60 * 24)))} Days Left in Trial`}
+                        </span>
                       </div>
                     </div>
                   </DropdownMenuLabel>

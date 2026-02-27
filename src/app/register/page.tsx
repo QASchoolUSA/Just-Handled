@@ -76,9 +76,17 @@ export default function RegisterPage() {
                 // Create Company Document
                 const companiesRef = collection(firestore, 'companies');
                 const newCompanyRef = doc(companiesRef);
+                const trialEndsAt = new Date();
+                trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+
                 await setDoc(newCompanyRef, {
                     name: companyName,
-                    createdAt: serverTimestamp()
+                    createdAt: serverTimestamp(),
+                    subscription: {
+                        status: 'trialing',
+                        plan: 'trial',
+                        trialEndsAt: trialEndsAt.getTime()
+                    }
                 });
 
                 // Create User Profile Document linking to the Company

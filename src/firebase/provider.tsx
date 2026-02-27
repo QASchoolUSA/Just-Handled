@@ -24,6 +24,7 @@ interface UserAuthState {
   userError: Error | null;
   companyId: string | null;
   companyName: string | null;
+  company: any | null;
 }
 
 // Combined state for the Firebase context
@@ -40,6 +41,7 @@ export interface FirebaseContextState {
   userError: Error | null; // Error from auth listener
   companyId: string | null;
   companyName: string | null;
+  company: any | null;
 }
 
 // Return type for useFirebase()
@@ -54,6 +56,7 @@ export interface FirebaseServicesAndUser {
   userError: Error | null;
   companyId: string | null;
   companyName: string | null;
+  company: any | null;
 }
 
 // Return type for useUser() - specific to user auth state
@@ -83,12 +86,13 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     userError: null,
     companyId: null,
     companyName: null,
+    company: null,
   });
 
   // Effect to subscribe to Firebase auth state changes
   useEffect(() => {
     if (!auth || !firestore) { // If no Auth/Firestore service instance, cannot determine user state
-      setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth/Firestore service not provided."), companyId: null, companyName: null });
+      setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth/Firestore service not provided."), companyId: null, companyName: null, company: null });
       return;
     }
 
@@ -104,6 +108,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
             const userDoc = await getDoc(userDocRef);
             let companyId = null;
             let companyName = null;
+            let company = null;
 
             if (userDoc.exists()) {
               companyId = userDoc.data()?.companyId || null;
@@ -112,22 +117,23 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
                 const compDoc = await getDoc(compDocRef);
                 if (compDoc.exists()) {
                   companyName = compDoc.data()?.name || null;
+                  company = { id: compDoc.id, ...compDoc.data() };
                 }
               }
             }
 
-            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null, companyId, companyName });
+            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null, companyId, companyName, company });
           } catch (error: any) {
             console.error("Error fetching user profile:", error);
-            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: error, companyId: null, companyName: null });
+            setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: error, companyId: null, companyName: null, company: null });
           }
         } else {
-          setUserAuthState({ user: null, isUserLoading: false, userError: null, companyId: null, companyName: null });
+          setUserAuthState({ user: null, isUserLoading: false, userError: null, companyId: null, companyName: null, company: null });
         }
       },
       (error) => { // Auth listener error
         console.error("FirebaseProvider: onAuthStateChanged error:", error);
-        setUserAuthState({ user: null, isUserLoading: false, userError: error, companyId: null, companyName: null });
+        setUserAuthState({ user: null, isUserLoading: false, userError: error, companyId: null, companyName: null, company: null });
       }
     );
     return () => unsubscribe(); // Cleanup
@@ -148,6 +154,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       userError: userAuthState.userError,
       companyId: userAuthState.companyId,
       companyName: userAuthState.companyName,
+      company: userAuthState.company,
     };
   }, [firebaseApp, firestore, auth, functions, storage, userAuthState]);
 
@@ -185,6 +192,7 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     userError: context.userError,
     companyId: context.companyId,
     companyName: context.companyName,
+    company: context.company,
   };
 };
 
@@ -245,7 +253,9 @@ export const useUser = (): UserHookResult => {
 export interface CompanyHookResult {
   companyId: string | null;
   companyName: string | null;
+  company: any | null;
   isUserLoading: boolean;
+  isCompanyLoading: boolean;
 }
 
 /**
@@ -253,6 +263,6 @@ export interface CompanyHookResult {
  * @returns {CompanyHookResult} Object with companyId and companyName.
  */
 export const useCompany = (): CompanyHookResult => {
-  const { companyId, companyName, isUserLoading } = useFirebase();
-  return { companyId, companyName, isUserLoading };
+  const { companyId, companyName, company, isUserLoading } = useFirebase();
+  return { companyId, companyName, company, isUserLoading, isCompanyLoading: isUserLoading };
 };

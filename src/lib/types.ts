@@ -4,6 +4,11 @@ export type Company = {
   id?: string;
   name: string;
   createdAt?: any; // Firestore Timestamp
+  subscription?: {
+    status: 'trialing' | 'active' | 'past_due' | 'canceled';
+    plan: 'trial' | 'pro';
+    trialEndsAt?: number; // timestamp in MS
+  };
 };
 
 export type UserProfile = {

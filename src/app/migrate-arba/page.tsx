@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useFirestore, useUser } from '@/firebase';
-import { collection, getDocs, doc, setDoc, writeBatch, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, writeBatch, query, where, updateDoc } from 'firebase/firestore';
 
 export default function MigrateArbaPage() {
     const firestore = useFirestore();
@@ -37,12 +37,22 @@ export default function MigrateArbaPage() {
                 await setDoc(newCompanyRef, {
                     name: 'Arba Express',
                     createdAt: new Date().toISOString(),
-                    ownerId: user.uid
+                    ownerId: user.uid,
+                    subscription: {
+                        status: 'active',
+                        plan: 'pro'
+                    }
                 });
                 targetCompanyId = newCompanyRef.id;
             } else {
                 targetCompanyId = querySnapshot.docs[0].id;
-                setStatus(`Found Arba Express company: ${targetCompanyId}`);
+                setStatus(`Found Arba Express company: ${targetCompanyId}. Ensuring it has a Pro subscription...`);
+                await updateDoc(doc(companiesRef, targetCompanyId), {
+                    subscription: {
+                        status: 'active',
+                        plan: 'pro'
+                    }
+                });
             }
 
             if (!targetCompanyId) throw new Error("Failed to resolve company ID");
