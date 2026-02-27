@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,21 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import type { AccountSettings } from '@/lib/types';
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
+import { useFirebase } from '@/firebase/provider';
+import { httpsCallable } from 'firebase/functions';
+import { signOut } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const formSchema = z.object({
   factoringCompany: z.string().min(1, 'Required'),
@@ -29,6 +44,11 @@ type SettingsFormValues = z.infer<typeof formSchema>;
 export default function SettingsPage() {
   const [accounts, setAccounts] = useLocalStorage<AccountSettings>(LS_KEYS.ACCOUNTS, DEFAULT_ACCOUNTS);
   const { toast } = useToast();
+  const { functions, auth } = useFirebase();
+  const router = useRouter();
+
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false);
+  const [isDeletingCompany, setIsDeletingCompany] = useState(false);
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(formSchema),
@@ -41,6 +61,36 @@ export default function SettingsPage() {
       title: 'Settings Saved',
       description: 'Your QBO account mappings have been updated.',
     });
+  }
+
+  const handleDeleteProfile = async () => {
+    if (!functions || !auth) return;
+    setIsDeletingProfile(true);
+    try {
+      const deleteProfileFn = httpsCallable(functions, 'deleteProfile');
+      await deleteProfileFn();
+      await signOut(auth);
+      router.push('/register');
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: 'Error', description: error.message || 'Failed to delete profile.', variant: 'destructive' });
+      setIsDeletingProfile(false);
+    }
+  }
+
+  const handleDeleteCompany = async () => {
+    if (!functions || !auth) return;
+    setIsDeletingCompany(true);
+    try {
+      const deleteCompanyFn = httpsCallable(functions, 'deleteCompany');
+      await deleteCompanyFn();
+      await signOut(auth);
+      router.push('/register');
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: 'Error', description: error.message || 'Failed to delete company.', variant: 'destructive' });
+      setIsDeletingCompany(false);
+    }
   }
 
   const formFields: { name: keyof SettingsFormValues; label: string; description: string }[] = [
@@ -61,7 +111,7 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">Map your QuickBooks Online Chart of Accounts.</p>
       </div>
 
-      <Card>
+      <Card className="mb-8">
         <CardHeader>
           <CardTitle>Account Mapping</CardTitle>
           <CardDescription>
@@ -93,6 +143,74 @@ export default function SettingsPage() {
               <Button type="submit">Save Settings</Button>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card className="border-red-200 dark:border-red-900/50">
+        <CardHeader>
+          <CardTitle className="text-red-600 dark:text-red-400">Danger Zone</CardTitle>
+          <CardDescription>
+            Destructive actions that cannot be undone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg border-red-100 dark:border-red-900/30">
+            <div>
+              <h3 className="font-medium text-red-600 dark:text-red-400">Delete Profile</h3>
+              <p className="text-sm text-muted-foreground">Permanently delete your personal profile and account data.</p>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="mt-4 sm:mt-0" disabled={isDeletingProfile || isDeletingCompany}>
+                  {isDeletingProfile ? 'Deleting...' : 'Delete Profile'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete your personal account
+                    and remove your data from our servers.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteProfile} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete My Profile
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg border-red-100 dark:border-red-900/30">
+            <div>
+              <h3 className="font-medium text-red-600 dark:text-red-400">Delete Company</h3>
+              <p className="text-sm text-muted-foreground">Permanently delete the entire company and ALL associated users. Only do this if you are a company owner.</p>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="mt-4 sm:mt-0" disabled={isDeletingProfile || isDeletingCompany}>
+                  {isDeletingCompany ? 'Deleting...' : 'Delete Company'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the entire company
+                    and <strong>ALL</strong> associated user accounts from our servers.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteCompany} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete Entire Company
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </CardContent>
       </Card>
     </div>

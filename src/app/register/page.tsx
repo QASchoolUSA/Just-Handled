@@ -167,7 +167,7 @@ export default function RegisterPage() {
                             <Input
                                 id="companyName"
                                 type="text"
-                                placeholder="Arba Express"
+                                placeholder="Quick Freight LLC"
                                 value={companyName}
                                 onChange={(e) => setCompanyName(e.target.value)}
                                 required

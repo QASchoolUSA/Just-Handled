@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import * as admin from 'firebase-admin';
 import { genkit } from 'genkit';
 import { vertexAI } from '@genkit-ai/vertexai';
+
+// Initialize Firebase Admin
+admin.initializeApp();
 
 // Initialize Genkit
 const ai = genkit({
@@ -129,6 +133,92 @@ export const analyzeDocs = onCall<AnalyzeDocsData>(
             console.error("Analysis Error:", error);
             if (error instanceof HttpsError) throw error;
             throw new HttpsError('internal', error.message || 'Analysis failed');
+        }
+    }
+);
+
+// Delete User Profile
+export const deleteProfile = onCall(
+    {
+        cors: true,
+        region: 'us-central1',
+    },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated.');
+        }
+
+        const uid = request.auth.uid;
+
+        try {
+            // Delete user document from Firestore
+            await admin.firestore().collection('users').doc(uid).delete();
+            // Delete user from Firebase Auth
+            await admin.auth().deleteUser(uid);
+
+            return { success: true, message: 'Profile deleted successfully.' };
+        } catch (error: any) {
+            console.error("Error deleting profile:", error);
+            throw new HttpsError('internal', 'Failed to delete profile.');
+        }
+    }
+);
+
+// Delete Company and Associated Users
+export const deleteCompany = onCall(
+    {
+        cors: true,
+        region: 'us-central1',
+        timeoutSeconds: 300, // Longer timeout for multiple deletions
+    },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated.');
+        }
+
+        const uid = request.auth.uid;
+        const db = admin.firestore();
+
+        try {
+            // Get user's document to find companyId
+            const userDoc = await db.collection('users').doc(uid).get();
+            if (!userDoc.exists) {
+                throw new HttpsError('not-found', 'User profile not found.');
+            }
+
+            const companyId = userDoc.data()?.companyId;
+            if (!companyId) {
+                throw new HttpsError('failed-precondition', 'User is not associated with any company.');
+            }
+
+            // Find all users associated with this company
+            const usersSnapshot = await db.collection('users').where('companyId', '==', companyId).get();
+            const uidsToDelete: string[] = [];
+
+            // Execute recursive delete on the company to wipe all subcollections (drivers, owners, loads, expenses etc.)
+            const companyRef = db.collection('companies').doc(companyId);
+            await db.recursiveDelete(companyRef);
+
+            // Execute batched delete for root users collection
+            if (usersSnapshot.size > 0) {
+                const batch = db.batch();
+                usersSnapshot.forEach(doc => {
+                    uidsToDelete.push(doc.id);
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+
+            // Delete users from Firebase Auth
+            if (uidsToDelete.length > 0) {
+                await admin.auth().deleteUsers(uidsToDelete);
+            }
+
+            return { success: true, message: 'Company, all sub-data, and associated users deleted successfully.' };
+        } catch (error: any) {
+            console.error("Error deleting company:", error);
+            if (error instanceof HttpsError) throw error;
+            throw new HttpsError('internal', 'Failed to delete company.');
         }
     }
 );
