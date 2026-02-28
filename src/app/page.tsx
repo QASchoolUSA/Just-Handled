@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route, CalendarIcon } from 'lucide-react';
+import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route, CalendarIcon, Receipt } from 'lucide-react';
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -320,7 +320,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Company Net Profit</CardTitle>
@@ -366,6 +366,18 @@ export default function DashboardPage() {
             <div className="text-3xl font-display font-bold text-foreground">{formatCurrency(totalOperationalExpenses)}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Driver pay + fees + expenses.
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Factoring Fees</CardTitle>
+            <Receipt className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-display font-bold text-foreground">{formatCurrency(totalFactoringFees)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Advances and factoring costs.
             </p>
           </CardContent>
         </Card>
