@@ -128,6 +128,19 @@ export default function DriversPage() {
     fileInputRef.current?.click();
   };
 
+  // Helper to read CSV columns in a case-insensitive way
+  const getField = (row: any, ...candidates: string[]) => {
+    if (!row) return undefined;
+    const lowerCandidates = candidates.map((c) => c.toLowerCase());
+    for (const key of Object.keys(row)) {
+      const normalizedKey = key.trim().toLowerCase();
+      if (lowerCandidates.includes(normalizedKey)) {
+        return row[key];
+      }
+    }
+    return undefined;
+  };
+
   const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -150,10 +163,12 @@ export default function DriversPage() {
             await Promise.all(importedDrivers.map(async (row, i) => {
               const rowNumber = i + 2;
 
-              // Robust check: Requires Name OR First Name to be present.
-              // AND Pay Type to be present.
-              const hasName = !!(row['First Name'] || row['Name']);
-              const hasPayType = !!row['Pay Type (percentage/cpm)'];
+              // Robust check: Requires Name / First Name to be present (case-insensitive),
+              // AND Pay Type to be present (also case-insensitive).
+              const nameValue = getField(row, 'First Name', 'first name', 'Name');
+              const payTypeValue = getField(row, 'Pay Type (percentage/cpm)');
+              const hasName = !!nameValue;
+              const hasPayType = !!payTypeValue;
 
               if (!hasName || !hasPayType) {
                 // Only report if row has some data
@@ -168,26 +183,38 @@ export default function DriversPage() {
               }
 
               try {
-                const payType = row['Pay Type (percentage/cpm)'].toLowerCase().includes('cpm') ? 'cpm' : 'percentage';
-                const rate = parseFloat(row['Rate']) || 0;
-                const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
-                const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
-                const eld = parseFloat(row['ELD']) || 0;
-                const adminFee = parseFloat(row['Admin Fee']) || 0;
-                const fuel = parseFloat(row['Fuel']) || 0;
-                const tolls = parseFloat(row['Tolls']) || 0;
-                const terminationDate = row['Termination Date'] || '';
+                const payTypeRaw = String(payTypeValue || '').toLowerCase();
+                const payType = payTypeRaw.includes('cpm') ? 'cpm' : 'percentage';
+
+                const rate = parseFloat(getField(row, 'Rate') || 0) || 0;
+                const insurance = parseFloat(getField(row, 'Insurance (Weekly)') || 0) || 0;
+                const escrow = parseFloat(getField(row, 'Escrow (Weekly)') || 0) || 0;
+                const eld = parseFloat(getField(row, 'ELD') || 0) || 0;
+                const adminFee = parseFloat(getField(row, 'Admin Fee') || 0) || 0;
+                const fuel = parseFloat(getField(row, 'Fuel') || 0) || 0;
+                const tolls = parseFloat(getField(row, 'Tolls') || 0) || 0;
+                const terminationDate = getField(row, 'Termination Date') || '';
 
                 // If termination date is present, mark as inactive and clear Unit ID
                 const status = terminationDate ? 'inactive' : 'active';
-                const unitId = (status === 'inactive') ? '' : (row['Unit ID'] || '');
+                const unitId = status === 'inactive' ? '' : (getField(row, 'Unit ID') || '');
 
                 const newDriver = {
-                  firstName: row['First Name'] || row['Name']?.split(' ')[0] || '',
-                  lastName: row['Last Name'] || row['Name']?.split(' ').slice(1).join(' ') || '',
+                  firstName: getField(row, 'First Name', 'first name') ||
+                    (getField(row, 'Name') ? String(getField(row, 'Name')).split(' ')[0] : '') ||
+                    '',
+                  lastName:
+                    getField(row, 'Last Name', 'last name') ||
+                    (getField(row, 'Name')
+                      ? String(getField(row, 'Name'))
+                          .split(' ')
+                          .slice(1)
+                          .join(' ')
+                      : '') ||
+                    '',
                   unitId,
-                  email: row['Email'] || '',
-                  phoneNumber: row['Contact number'] || '',
+                  email: getField(row, 'Email', 'email') || '',
+                  phoneNumber: getField(row, 'Contact number', 'contact number', 'Phone', 'Phone Number') || '',
                   payType,
                   rate,
                   status,
