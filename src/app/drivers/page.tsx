@@ -163,19 +163,18 @@ export default function DriversPage() {
             await Promise.all(importedDrivers.map(async (row, i) => {
               const rowNumber = i + 2;
 
-              // Robust check: Requires Name / First Name to be present (case-insensitive),
-              // AND Pay Type to be present (also case-insensitive).
+              // Robust check: Requires Name / First Name to be present (case-insensitive).
+              // Pay Type & Rate are optional; they will default if missing.
               const nameValue = getField(row, 'First Name', 'first name', 'Name');
               const payTypeValue = getField(row, 'Pay Type (percentage/cpm)');
               const hasName = !!nameValue;
-              const hasPayType = !!payTypeValue;
 
-              if (!hasName || !hasPayType) {
+              if (!hasName) {
                 // Only report if row has some data
                 if (Object.values(row).some(v => !!v)) {
                   errors.push({
                     row: rowNumber,
-                    reason: `Missing required fields (Name or Pay Type). Found: ${JSON.stringify(row)}`,
+                    reason: `Missing required field (Name). Found: ${JSON.stringify(row)}`,
                     data: row
                   });
                 }
