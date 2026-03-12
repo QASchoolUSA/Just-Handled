@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { format, subMonths, startOfDay, endOfDay } from "date-fns";
-import { Calendar as CalendarIcon, ArrowLeft, Download, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -18,7 +18,7 @@ import { collection, query, where } from "firebase/firestore";
 import type { Load, Expense, Driver, Owner } from "@/lib/types";
 import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import { DateRange } from "react-day-picker";
-import Link from "next/link";
+import { computeProfitLossMetrics } from "@/lib/financial/compute-profit-loss";
 
 export default function ProfitLossPage() {
     const firestore = useFirestore();
@@ -112,123 +112,11 @@ export default function ProfitLossPage() {
 
     const metrics = useMemo(() => {
         if (!filteredLoads || !filteredExpenses || !settlementSummary) return null;
-
-        // 1. Gross Operating Revenue
-        const linehaulRevenue = filteredLoads.reduce((sum, load) => sum + (load.invoiceAmount || 0), 0);
-        // Note: Fuel Surcharge, Detention etc are usually part of invoiceAmount in current model
-        // We will list them as 0 if not separable, or assume invoiceAmount is total.
-        const totalRevenue = linehaulRevenue;
-
-        // 2. Cost of Goods Sold
-        // Fuel
-        const fuelCost = filteredExpenses
-            .filter(e => e.expenseCategory === 'Fuel' || e.description?.toLowerCase().includes('fuel'))
-            .reduce((sum, e) => sum + (e.amount || 0), 0);
-
-        // Driver Wages (Gross Pay from settlements)
-        const driverWages = settlementSummary.reduce((sum, s) => sum + (s.grossPay || 0), 0);
-
-        // Tolls
-        const tolls = filteredExpenses
-            .filter(e => e.expenseCategory === 'Tolls' || e.description?.toLowerCase().includes('toll'))
-            .reduce((sum, e) => sum + (e.amount || 0), 0);
-
-        // Dispatch Fees (if tracked separately in expenses or deductions)
-        // Check expenses for 'Dispatch'
-        const dispatchFees = filteredExpenses
-            .filter(e => e.description?.toLowerCase().includes('dispatch'))
-            .reduce((sum, e) => sum + (e.amount || 0), 0);
-
-        const totalCOGS = fuelCost + driverWages + tolls + dispatchFees;
-        const grossProfit = totalRevenue - totalCOGS;
-
-        // 3. Operating Expenses
-        // We can group remaining expenses by category
-        const opExCategories = [
-            'Insurance', 'Repairs', 'Maintenance', 'Tires', 'Permits', 'DOT', 'Accounting', 'Office', 'ELD', 'Rent', 'Depreciation'
-        ];
-
-        // Helper to sum expenses by strict or loose match
-        const sumByCategory = (cat: string) => filteredExpenses
-            .filter(e =>
-                (e.expenseCategory === cat) ||
-                (e.description?.toLowerCase().includes(cat.toLowerCase()))
-            )
-            .reduce((sum, e) => sum + (e.amount || 0), 0);
-
-        const truckPayments = sumByCategory('Truck Payment') + sumByCategory('Lease');
-        const insurance = sumByCategory('Insurance');
-        const repairsMaint = sumByCategory('Repairs') + sumByCategory('Maintenance');
-        const tires = sumByCategory('Tires');
-        const permits = sumByCategory('Permits') + sumByCategory('Licensing');
-        const dot = sumByCategory('DOT') + sumByCategory('Compliance');
-        const accounting = sumByCategory('Accounting') + sumByCategory('Professional Fees');
-        const office = sumByCategory('Office') + sumByCategory('Admin');
-        const eld = sumByCategory('ELD') + sumByCategory('GPS') + sumByCategory('Communication');
-        const parking = sumByCategory('Parking') + sumByCategory('Storage');
-
-        // Calculate Total Operating Expenses
-        // Note: We need to be careful not to double count if logic overlaps, 
-        // but for now simple keyword matching is a good start.
-        // Also excluding COGS items (Fuel, Tolls).
-
-        const totalOpEx = truckPayments + insurance + repairsMaint + tires + permits + dot + accounting + office + eld + parking;
-
-        // 4. Factoring & Financial
-        const factoringFees = filteredLoads.reduce((sum, l) => sum + (l.factoringFee || 0), 0);
-        const transactionFees = filteredLoads.reduce((sum, l) => sum + (l.transactionFee || 0), 0);
-        const totalFinancial = factoringFees + transactionFees;
-
-        const operatingProfit = grossProfit - totalOpEx - totalFinancial;
-        const netProfit = operatingProfit; // +/- Other Income if any
-
-        // KPIS
-        const totalMiles = filteredLoads.reduce((sum, l) => sum + (l.miles || 0), 0);
-        const rpm = totalMiles > 0 ? totalRevenue / totalMiles : 0;
-        const cpm = totalMiles > 0 ? (totalCOGS + totalOpEx + totalFinancial) / totalMiles : 0;
-        const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-
-        return {
-            revenue: {
-                linehaul: linehaulRevenue,
-                total: totalRevenue
-            },
-            cogs: {
-                fuel: fuelCost,
-                driverWages,
-                tolls,
-                dispatchFees,
-                total: totalCOGS
-            },
-            opex: {
-                truckPayments,
-                insurance,
-                repairsMaint,
-                tires,
-                permits,
-                dot,
-                accounting,
-                office,
-                eld,
-                parking,
-                total: totalOpEx
-            },
-            financial: {
-                factoring: factoringFees,
-                transaction: transactionFees,
-                total: totalFinancial
-            },
-            grossProfit,
-            operatingProfit,
-            netProfit,
-            kpis: {
-                totalMiles,
-                rpm,
-                cpm,
-                profitMargin
-            }
-        };
-
+        return computeProfitLossMetrics({
+            loads: filteredLoads,
+            expenses: filteredExpenses,
+            settlementSummary,
+        });
     }, [filteredLoads, filteredExpenses, settlementSummary]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);

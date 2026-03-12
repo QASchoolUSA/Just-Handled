@@ -43,7 +43,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { LogOut, Sparkles, MoreHorizontal } from 'lucide-react';
 import { useAuth, useUser, useCompany } from '@/firebase/provider';
 import { signOut } from 'firebase/auth';
@@ -85,6 +85,7 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
     { href: '/factoring', label: 'Factoring', icon: Landmark, hideOnMobile: true },
     { href: '/reports', label: 'Reports', icon: FileText, hideOnMobile: true },
     { href: '/profit-loss', label: 'Profit & Loss', icon: PieChart, hideOnMobile: true },
+    { href: '/balance-sheet', label: 'Balance Sheet', icon: Landmark, hideOnMobile: true },
     { href: '/settings', label: 'Settings', icon: Settings, hideOnMobile: true },
   ];
 
