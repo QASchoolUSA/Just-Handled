@@ -80,6 +80,7 @@ function AppSidebarInner({ children }: { children: React.ReactNode }) {
     { href: '/settlements', label: 'Settlements', icon: BookCopy, hideOnMobile: true },
     { href: '/drivers', label: 'Drivers', icon: Users },
     { href: '/owners', label: 'Owners', icon: Users },
+    { href: '/loadboard', label: 'Loadboard', icon: Truck },
     { href: '/document-center', label: 'Document Center', icon: FileText, hideOnMobile: true },
     { href: '/factoring', label: 'Factoring', icon: Landmark, hideOnMobile: true },
     { href: '/reports', label: 'Reports', icon: FileText, hideOnMobile: true },
