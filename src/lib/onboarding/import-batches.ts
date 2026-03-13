@@ -180,6 +180,7 @@ export async function runOnboardingImport(
   }
 
   // Merge phase: one driver per name; unitId from latest load, unitHistory = all trucks used
+  const mergeStartMs = Date.now();
   onProgress({
     phase: 'merging',
     current: 0,
@@ -198,13 +199,21 @@ export async function runOnboardingImport(
     ...(d.data() as Load),
     id: d.id,
   }));
-  let merged = 0;
   const names = Array.from(nameToDriverIds.keys());
   for (let n = 0; n < names.length; n++) {
     const name = names[n];
     const driverIds = nameToDriverIds.get(name)!;
     const allLoads = loadsWithId.filter((l) => driverIds.includes(l.driverId));
-    if (allLoads.length === 0) continue;
+    if (allLoads.length === 0) {
+      onProgress({
+        phase: 'merging',
+        current: n + 1,
+        total: names.length,
+        message: `Merging drivers... ${n + 1} of ${names.length} names`,
+        estimatedMsRemaining: n > 0 ? Math.round(((Date.now() - mergeStartMs) / (n + 1)) * (names.length - n - 1)) : null,
+      });
+      continue;
+    }
     const sorted = [...allLoads].sort((a, b) => {
       const dA = a.deliveryDate || a.pickupDate || '';
       const dB = b.deliveryDate || b.pickupDate || '';
@@ -222,21 +231,22 @@ export async function runOnboardingImport(
       for (const id of driverIds) {
         if (id !== canonicalId) await deleteDoc(doc(driversCollection, id));
       }
-      merged += driverIds.length - 1;
     }
     await updateDoc(doc(driversCollection, canonicalId), {
       unitId,
       unitHistory,
     });
-    if (n % 10 === 0 && names.length > 10) {
-      onProgress({
-        phase: 'merging',
-        current: n + 1,
-        total: names.length,
-        message: `Merging drivers... ${n + 1} of ${names.length} names`,
-        estimatedMsRemaining: null,
-      });
-    }
+    const done = n + 1;
+    const elapsed = Date.now() - mergeStartMs;
+    const avgMsPerName = done > 0 ? elapsed / done : 0;
+    const remaining = names.length - done;
+    onProgress({
+      phase: 'merging',
+      current: done,
+      total: names.length,
+      message: `Merging drivers... ${done} of ${names.length} names`,
+      estimatedMsRemaining: remaining > 0 && avgMsPerName > 0 ? Math.round(remaining * avgMsPerName) : 0,
+    });
   }
 
   return { driversCreated, loadsCreated, errors };
