@@ -90,6 +90,8 @@ const TABLE_COLUMNS = [
   { id: 'deliveryDate', label: 'Delivery Date' },
   { id: 'pickupLocation', label: 'Pick Up Location' },
   { id: 'deliveryLocation', label: 'Delivery Location' },
+  { id: 'extraStops', label: 'Extra Stops' },
+  { id: 'extraStopsPay', label: 'Extra Stops Pay' },
   { id: 'invoiceAmount', label: 'Invoice Amt' },
   { id: 'totalPay', label: 'Total Pay' },
   { id: 'advance', label: 'Advance' },
@@ -371,11 +373,12 @@ export default function SettlementsPage() {
       rateConfirmationUrl: loadData.rateConfirmationUrl || null,
       brokerId: loadData.brokerId || null,
       truckId: loadData.truckId || null,
-
       trailerNumber: loadData.trailerNumber || null,
       emptyMiles: loadData.emptyMiles || 0,
       primeRateSurcharge: loadData.primeRateSurcharge || 0,
       transactionFee: loadData.transactionFee || 0,
+      extraStops: loadData.extraStops ?? 0,
+      extraStopsPay: loadData.extraStopsPay ?? 0,
     };
 
     if (firestore && loadsCollectionRef && companyId) {
@@ -448,14 +451,14 @@ export default function SettlementsPage() {
         'Invoice ID', 'Trailer Number', 'Truck ID',
         'Miles', 'Empty Miles', 'Pickup Location', 'Delivery Location',
         'Invoice Amount', 'Reserve Amount', 'Prime Rate Surcharge', 'Transaction Fee',
-        'Factoring Fee', 'Advance'
+        'Factoring Fee', 'Advance', 'Extra Stops', 'Extra Stops Pay'
       ],
       [
         '12345', 'John Doe', '2025-01-01', '2025-01-03', 'BROKER-1',
         'INV-001', 'Trailer-500', 'Truck-101',
         '500', '50', 'Los Angeles, CA', 'New York, NY',
         '1350.00', '0.00', '0.00', '0.00',
-        '35.00', '0.00'
+        '35.00', '0.00', '2', '75.00'
       ],
     ];
     const csv = Papa.unparse(csvData);
@@ -547,8 +550,35 @@ export default function SettlementsPage() {
           const errors: ImportError[] = [];
           const skipped: Array<{ row: number; loadNumber: string }> = [];
 
-          // Get existing load numbers for duplicate detection
-          const existingLoadNumbers = new Set(loads?.map(l => l.loadNumber) || []);
+          // Get existing load numbers for duplicate detection.
+          // IMPORTANT: `loads` is week-filtered in this page, so it can't be trusted for global dedupe.
+          // We query Firestore for loadNumbers present in the import file to prevent duplicates across all time.
+          const existingLoadNumbers = new Set<string>();
+          const importLoadNumbers = Array.from(
+            new Set(
+              importedLoads
+                .map((r) => (r?.['Load #'] ?? '').toString().trim())
+                .filter(Boolean)
+            )
+          );
+
+          try {
+            // Firestore 'in' supports up to 30 values.
+            for (let i = 0; i < importLoadNumbers.length; i += 30) {
+              const chunk = importLoadNumbers.slice(i, i + 30);
+              if (chunk.length === 0) continue;
+              const qExisting = query(loadsCollectionRef, where('loadNumber', 'in', chunk));
+              const snapExisting = await getDocs(qExisting);
+              snapExisting.forEach((d) => {
+                const ln = (d.data() as any)?.loadNumber;
+                if (ln) existingLoadNumbers.add(String(ln).trim());
+              });
+            }
+          } catch (err) {
+            console.error('Duplicate pre-check failed (continuing with best-effort dedupe).', err);
+            // Fallback: include currently loaded loads (week-scoped) so at least we avoid duplicates in-view.
+            (loads || []).forEach((l) => existingLoadNumbers.add(String(l.loadNumber).trim()));
+          }
 
           for (let i = 0; i < importedLoads.length; i++) {
             const row = importedLoads[i];
@@ -632,6 +662,9 @@ export default function SettlementsPage() {
 
               factoringFee: parseNumber(row['Factoring Fee']),
               advance: parseNumber(row['Advance']),
+
+              extraStops: parseNumber(row['Extra Stops']) || 0,
+              extraStopsPay: parseNumber(row['Extra Stops Pay']) || 0,
 
               proofOfDeliveryUrl: null,
               rateConfirmationUrl: null,
@@ -1102,6 +1135,8 @@ export default function SettlementsPage() {
                                           case 'deliveryDate': return new Date(load.deliveryDate).toLocaleDateString();
                                           case 'pickupLocation': return <span className="text-sm text-foreground truncate block max-w-[120px]" title={load.pickupLocation}>{formatLocationShort(load.pickupLocation)}</span>;
                                           case 'deliveryLocation': return <span className="text-sm text-foreground truncate block max-w-[120px]" title={load.deliveryLocation}>{formatLocationShort(load.deliveryLocation)}</span>;
+                                          case 'extraStops': return (load.extraStops ?? 0) > 0 ? load.extraStops : '—';
+                                          case 'extraStopsPay': return (load.extraStopsPay ?? 0) > 0 ? formatCurrency(load.extraStopsPay!) : '—';
                                           case 'invoiceAmount': return formatCurrency(load.invoiceAmount);
                                           case 'totalPay': return <span className="text-green-600 font-medium">{formatCurrency(calculateDriverPay(load, driver))}</span>;
                                           case 'advance': return formatCurrency(load.advance || 0);

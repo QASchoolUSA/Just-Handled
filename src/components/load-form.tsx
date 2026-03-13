@@ -53,6 +53,8 @@ const formSchema = z.object({
   reserveAmount: z.coerce.number().min(0),
   primeRateSurcharge: z.coerce.number().min(0).default(0),
   transactionFee: z.coerce.number().min(0).default(0),
+  extraStops: z.coerce.number().min(0).default(0),
+  extraStopsPay: z.coerce.number().min(0).default(0),
 
   brokerId: z.string().optional(),
   invoiceId: z.string().min(1, { message: 'Invoice ID is required.' }),
@@ -93,6 +95,8 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
       reserveAmount: 0,
       primeRateSurcharge: 0,
       transactionFee: 0,
+      extraStops: 0,
+      extraStopsPay: 0,
       brokerId: '',
       invoiceId: '',
     },
@@ -106,6 +110,8 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
           brokerId: load.brokerId || '',
           truckId: load.truckId,
           trailerNumber: load.trailerNumber,
+          extraStops: load.extraStops ?? 0,
+          extraStopsPay: load.extraStopsPay ?? 0,
           proofOfDelivery: undefined,
           rateConfirmation: undefined,
         });
@@ -127,6 +133,8 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
           reserveAmount: 0,
           primeRateSurcharge: 0,
           transactionFee: 0,
+          extraStops: 0,
+          extraStopsPay: 0,
           brokerId: '',
           invoiceId: '',
           proofOfDelivery: undefined,
@@ -423,6 +431,34 @@ export function LoadForm({ isOpen, onOpenChange, onSave, load, drivers }: LoadFo
                       <FormControl>
                         <Input type="number" step="0.01" {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="extraStops"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Extra Stops</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={0} step={1} {...field} />
+                      </FormControl>
+                      <FormDescription>Additional stops (beyond origin/destination).</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="extraStopsPay"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Extra Stops Pay</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" min={0} {...field} />
+                      </FormControl>
+                      <FormDescription>Amount paid for extra stops.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

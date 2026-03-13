@@ -80,6 +80,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 interface ReceiptData {
     receipt_type: string;
+    vin?: string | null;
+    license_plate?: string | null;
     receipt_number: string;
     transaction_date: string;
     transaction_time: string;
@@ -141,6 +143,29 @@ interface PendingItem {
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'application/pdf'];
 
+/** Sanitize a string for use as a single segment in a Firebase Storage path (no slashes, minimal special chars). */
+function sanitizeStorageSegment(name: string): string {
+    if (!name || typeof name !== 'string') return 'unknown';
+    return name
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[/\\[\]*?"]/g, '_')
+        .replace(/\s/g, '')
+        .slice(0, 64) || 'unknown';
+}
+
+/** Build storage path: receipts/{uploaderName}/{YYYY-MM-DD}_{timestamp}_{index}_{filename} */
+function getReceiptStoragePath(
+    uploaderName: string,
+    fileName: string,
+    index: number
+): string {
+    const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const segment = sanitizeStorageSegment(uploaderName);
+    const timestamp = Date.now();
+    return `receipts/${segment}/${dateStr}_${timestamp}_${index}_${fileName}`;
+}
+
 // --- Helper Component for Receipt Row ---
 function ReceiptRow({ receipt, availableUnitIds, unitOwners, onUpdateUnitId, onToggleReimbursable, onPreview, onDelete }: {
     receipt: SavedReceipt,
@@ -154,6 +179,8 @@ function ReceiptRow({ receipt, availableUnitIds, unitOwners, onUpdateUnitId, onT
     const formattedDate = receipt.transaction_date ? new Date(receipt.transaction_date).toLocaleDateString() : 'N/A';
     const amount = typeof receipt.total_amount === 'number' ? receipt.total_amount : parseFloat(String(receipt.total_amount).replace(/[^0-9.]/g, '') || '0');
     const billTo = receipt.unit_id ? (unitOwners[receipt.unit_id] || '-') : '-';
+    const vin = (receipt.vin || '').trim() || '-';
+    const plate = (receipt.license_plate || '').trim() || '-';
 
     return (
         <TableRow>
@@ -176,6 +203,8 @@ function ReceiptRow({ receipt, availableUnitIds, unitOwners, onUpdateUnitId, onT
             </TableCell>
             <TableCell>{billTo}</TableCell>
             <TableCell className="font-medium">{receipt.vendor_name || 'Unknown Vendor'}</TableCell>
+            <TableCell className="font-mono text-xs">{vin}</TableCell>
+            <TableCell className="font-mono text-xs">{plate}</TableCell>
             <TableCell>
                 <div className="flex items-center justify-center">
                     <Switch
@@ -400,7 +429,8 @@ export default function AnalyzeDocsPage() {
                 let fileDetails = null;
 
                 if (user && storage) {
-                    const storagePath = `receipts/${user.uid}/${Date.now()}_${i}_${file.name}`;
+                    const uploaderName = user.displayName || user.email?.split('@')[0] || user.uid;
+                    const storagePath = getReceiptStoragePath(uploaderName, file.name, i);
                     const storageRef = ref(storage, storagePath);
                     await uploadBytes(storageRef, file);
                     const downloadURL = await getDownloadURL(storageRef);
@@ -867,6 +897,8 @@ export default function AnalyzeDocsPage() {
                                         <TableHead className="w-[140px]">Unit ID</TableHead>
                                         <TableHead className="w-[150px]">Bill To</TableHead>
                                         <TableHead>Vendor</TableHead>
+                                        <TableHead className="w-[190px]">VIN</TableHead>
+                                        <TableHead className="w-[140px]">Plate</TableHead>
                                         <TableHead className="w-[150px]">Reimbursable</TableHead>
                                         <TableHead className="text-right">Total</TableHead>
                                         <TableHead className="w-[120px]"></TableHead>

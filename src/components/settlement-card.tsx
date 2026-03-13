@@ -26,11 +26,13 @@ export function SettlementCard({ summary, type, onExportPDF, driverMap, owners }
         return (summary as SettlementSummary).loads.map(l => {
             const driver = driverMap?.get(l.driverId);
             const pay = calculateDriverPay(l, driver);
+            const extraStops = l.extraStops ?? 0;
             return (
                 <TableRow key={l.id} className="hover:bg-muted/20">
                     <TableCell>{l.loadNumber}</TableCell>
                     <TableCell className="text-xs">{l.pickupLocation}</TableCell>
                     <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
+                    <TableCell className="text-center text-muted-foreground">{extraStops > 0 ? extraStops : '—'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(pay)}</TableCell>
                 </TableRow>
             );
@@ -42,11 +44,13 @@ export function SettlementCard({ summary, type, onExportPDF, driverMap, owners }
         return (summary as OwnerSettlementSummary).loads.map(l => {
             const owner = owners?.find(o => o.id === (summary as OwnerSettlementSummary).ownerId);
             const pay = owner ? l.invoiceAmount * owner.percentage : 0;
+            const extraStops = l.extraStops ?? 0;
             return (
                 <TableRow key={l.id} className="hover:bg-muted/20">
                     <TableCell>{l.loadNumber}</TableCell>
                     <TableCell className="text-xs">{l.pickupLocation}</TableCell>
                     <TableCell className="text-xs">{l.deliveryLocation}</TableCell>
+                    <TableCell className="text-center text-muted-foreground">{extraStops > 0 ? extraStops : '—'}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(pay)}</TableCell>
                 </TableRow>
             );
@@ -98,7 +102,7 @@ export function SettlementCard({ summary, type, onExportPDF, driverMap, owners }
                         <h4 className="font-semibold mb-4 text-sm uppercase tracking-wider text-muted-foreground">Loads ({summary.loads.length})</h4>
                         <div className="rounded-lg border overflow-hidden mb-6">
                             <Table>
-                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
+                                <TableHeader><TableRow className="bg-muted/50"><TableHead>Load #</TableHead><TableHead>Pick Up</TableHead><TableHead>Drop Off</TableHead><TableHead className="text-center">Extra Stops</TableHead><TableHead className="text-right">Pay</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                     {isDriver ? renderDriverLoads() : renderOwnerLoads()}
                                 </TableBody>

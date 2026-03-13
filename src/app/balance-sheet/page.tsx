@@ -256,11 +256,13 @@ export default function BalanceSheetPage() {
                   <div className="mt-3 space-y-4">
                     <div>
                       <div className="text-sm font-semibold">Current Assets</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Cash or things that become cash within ~12 months</p>
                       <div className="mt-2 space-y-1">
                         <BalanceRow line={{ key: "cash", label: "Cash", value: null }} />
                         <BalanceRow line={{ key: "arUnfactored", label: "Accounts Receivable (Unfactored)", value: null }} />
+                        <BalanceRow line={{ key: "factoredReceivables", label: "Factored Receivables", value: null }} />
                         <BalanceRow line={{ key: "factoredReserve", label: "Factored Receivables (Reserve)", value: null }} />
-                        <BalanceRow line={{ key: "fuelAdvances", label: "Fuel Advances / Escrow", value: null }} />
+                        <BalanceRow line={{ key: "fuelAdvances", label: "Fuel Advances", value: null }} />
                         <BalanceRow line={{ key: "prepaid", label: "Prepaid Expenses", value: null }} />
                         <BalanceRow line={{ key: "totalCurrentAssets", label: "Total Current Assets", value: null, isSubtotal: true }} />
                       </div>
@@ -268,6 +270,7 @@ export default function BalanceSheetPage() {
 
                     <div>
                       <div className="text-sm font-semibold">Property &amp; Equipment</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Your trucking equipment</p>
                       <div className="mt-2 space-y-1">
                         <BalanceRow line={{ key: "trucks", label: "Trucks", value: null }} />
                         <BalanceRow line={{ key: "trailers", label: "Trailers", value: null }} />
@@ -302,6 +305,7 @@ export default function BalanceSheetPage() {
                   <div className="mt-3 space-y-4">
                     <div>
                       <div className="text-sm font-semibold">Current Liabilities</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Due within 12 months</p>
                       <div className="mt-2 space-y-1">
                         <BalanceRow line={{ key: "ap", label: "Accounts Payable", value: null }} />
                         <BalanceRow line={{ key: "creditCards", label: "Credit Cards", value: null }} />
@@ -328,6 +332,7 @@ export default function BalanceSheetPage() {
 
                     <div>
                       <div className="text-sm font-semibold">Equity</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Owner’s value in the business</p>
                       <div className="mt-2 space-y-1">
                         {equityLines.map((line) => (
                           <BalanceRow key={line.key} line={line} />
@@ -343,9 +348,9 @@ export default function BalanceSheetPage() {
               </div>
             </div>
 
-            <div className="text-xs text-muted-foreground">
-              For now, only <span className="font-medium">Current Period Net Income</span> is calculated automatically.
-              Additional balance sheet line items will be added next.
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+              <strong className="text-foreground">Balance sheet rule:</strong> Total Assets = Total Liabilities + Equity.
+              Only <span className="font-medium text-foreground">Current Period Net Income</span> is calculated from loads and expenses; other line items are placeholders for manual or future data entry.
             </div>
           </CardContent>
         </Card>

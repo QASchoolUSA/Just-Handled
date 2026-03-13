@@ -27,6 +27,8 @@ Output ONLY valid JSON as an array of receipts. Extract attributes:
 [
   {
     "receipt_type": "receipt, cat_scale, toll, parking_ticket, or other",
+    "vin": "Vehicle Identification Number if present. 17 characters, alphanumeric. If multiple VINs appear, return the most likely primary vehicle VIN; otherwise null.",
+    "license_plate": "License plate number if present (state/province optional in vendor_location). If multiple plates appear, return the most likely primary plate; otherwise null.",
     "receipt_number": "Invoice/receipt/scale ticket #",
     "transaction_date": "YYYY-MM-DD",
     "transaction_time": "HH:MM",
@@ -65,6 +67,7 @@ Rules:
 - Scan ALL images provided.
 - Merge "informational" docs (like weight tickets) with "financial" docs (receipts) if they match.
 - Be precise with Unit IDs.
+- For VIN and license_plate: do not hallucinate. Only return values you can clearly read. If unsure, return null.
 - Return ONLY JSON.
 `;
 

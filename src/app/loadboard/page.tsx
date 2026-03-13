@@ -128,11 +128,25 @@ export default function LoadboardPage() {
   // Sort all loads for table
   const sortedTableLoads = useMemo(() => {
      if (!allLoads) return [];
-     return [...allLoads].sort((a, b) => {
+     const sorted = [...allLoads].sort((a, b) => {
         const dA = parseDateAny(a.pickupDate || a.deliveryDate).getTime();
         const dB = parseDateAny(b.pickupDate || b.deliveryDate).getTime();
         return dB - dA;
      });
+
+     // Guard against accidental duplicates (e.g., duplicate loadNumber docs).
+     // Keep the most recent occurrence (since we sorted desc).
+     const seen = new Set<string>();
+     const deduped: Load[] = [];
+     for (const load of sorted) {
+       const key = (load.loadNumber ? `loadNumber:${load.loadNumber}` : `id:${load.id || ''}`).trim();
+       if (!key) continue;
+       if (seen.has(key)) continue;
+       seen.add(key);
+       deduped.push(load);
+     }
+
+     return deduped;
   }, [allLoads]);
 
 

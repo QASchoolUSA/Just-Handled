@@ -83,9 +83,15 @@ export type Load = {
   reserveAmount: number;
   primeRateSurcharge: number;
   transactionFee: number;
+  /** Number of additional stops (beyond origin/destination). */
+  extraStops?: number;
+  /** Pay for extra stops (amount paid to driver for additional stops). */
+  extraStopsPay?: number;
 
   // Meta
   brokerId?: string;
+  /** Broker/shipper display name (optional). */
+  brokerName?: string;
   invoiceId: string;
 
   proofOfDeliveryUrl?: string;

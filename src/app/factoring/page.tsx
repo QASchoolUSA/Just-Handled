@@ -19,6 +19,7 @@ import { useCompany } from "@/firebase/provider";
 import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimestamp, onSnapshot, orderBy } from "firebase/firestore";
 import type { Load } from "@/lib/types";
 import * as Papa from "papaparse";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // --- Types ---
 
@@ -30,6 +31,7 @@ type InvoiceRecord = {
     transactionFee: number;
     proratedPrimeWire: number;
     totalFactoringCost: number;
+    brokerName?: string;
 };
 
 type LoadGroup = {
@@ -40,6 +42,8 @@ type LoadGroup = {
     totalInvoiceAmount: number;
     totalFactoringCost: number;
     totalAdvance: number;
+    /** Optional broker/shipper name from CSV. */
+    brokerName?: string;
 };
 
 type GlobalStats = {
@@ -66,6 +70,13 @@ export default function FactoringPage() {
 
     const [processing, setProcessing] = useState(false);
     const [uploading, setUploading] = useState(false);
+
+    const [importInfo, setImportInfo] = useState<{
+        title: string;
+        description?: string;
+        variant?: "success" | "error" | "info";
+    } | null>(null);
+    const [isImportInfoOpen, setIsImportInfoOpen] = useState(false);
 
     // Fetch History
     useEffect(() => {
@@ -111,10 +122,10 @@ export default function FactoringPage() {
 
     const handleDownloadTemplate = () => {
         const csvData = [
-            ['Load Number', 'Invoice Number', 'Invoice Date', 'Invoice Amount', 'Advance Amount', 'Transaction Fee', 'Prime Surcharge', 'Wire Fee'],
-            ['1001A', 'IN-00123', '03/01/2026', '5000', '4950', '50', '15', '25'],
-            ['1002B', 'IN-00124', '03/01/2026', '2000', '1980', '20', '', ''],
-            ['1003C', 'IN-00125', '03/02/2026', '3500', '3465', '35', '', ''],
+            ['Load Number', 'Invoice Number', 'Invoice Date', 'Invoice Amount', 'Advance Amount', 'Transaction Fee', 'Prime Surcharge', 'Wire Fee', 'Broker Name'],
+            ['1001A', 'IN-00123', '03/01/2026', '5000', '4950', '50', '15', '25', 'ABC Logistics'],
+            ['1002B', 'IN-00124', '03/01/2026', '2000', '1980', '20', '', '', ''],
+            ['1003C', 'IN-00125', '03/02/2026', '3500', '3465', '35', '', '', 'XYZ Freight'],
         ];
         const csv = Papa.unparse(csvData);
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -170,7 +181,8 @@ export default function FactoringPage() {
                             amount,
                             reserve: amount - advance - fee, // Calculate derived reserve manually
                             fee,
-                            advance // Pass raw advance
+                            advance, // Pass raw advance
+                            brokerName: row['Broker Name']?.trim() || undefined,
                         });
                         totalScheduleAmount += amount;
                     }
@@ -182,12 +194,22 @@ export default function FactoringPage() {
                     await buildPreviewData(invoicesToProcess, loadMappingCsv, primeFee, wireFee, totalScheduleAmount);
                     if (e.target) e.target.value = ''; // Reset input
                 } catch (error: any) {
-                    toast({ title: "CSV Error", description: error.message, variant: "destructive" });
+                    setImportInfo({
+                        title: "CSV Error",
+                        description: error.message,
+                        variant: "error",
+                    });
+                    setIsImportInfoOpen(true);
                     setProcessing(false);
                 }
             },
             error: (err) => {
-                toast({ title: "Parse Error", description: "Failed to read CSV file.", variant: "destructive" });
+                setImportInfo({
+                    title: "Parse Error",
+                    description: "Failed to read CSV file.",
+                    variant: "error",
+                });
+                setIsImportInfoOpen(true);
                 setProcessing(false);
             }
         });
@@ -260,11 +282,13 @@ export default function FactoringPage() {
                     invoices: [],
                     totalInvoiceAmount: 0,
                     totalFactoringCost: 0,
-                    totalAdvance: 0
+                    totalAdvance: 0,
+                    brokerName: (inv as any).brokerName || undefined,
                 });
             }
 
             const group = loadsMap.get(effectiveLoadNumber)!;
+            if ((inv as any).brokerName && !group.brokerName) group.brokerName = (inv as any).brokerName;
             group.invoices.push({
                 invoiceId: inv.invoiceId,
                 invoiceDate: inv.date,
@@ -272,7 +296,8 @@ export default function FactoringPage() {
                 reserveAmount: inv.reserve,
                 transactionFee: inv.fee,
                 proratedPrimeWire: proratedOther,
-                totalFactoringCost: totalCost
+                totalFactoringCost: totalCost,
+                brokerName: (inv as any).brokerName,
             });
             group.totalInvoiceAmount += inv.amount;
             group.totalFactoringCost += totalCost;
@@ -291,7 +316,12 @@ export default function FactoringPage() {
             totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
         });
 
-        toast({ title: "Success", description: `Prepared ${finalPreviewData.length} load records.` });
+        setImportInfo({
+            title: "Preview Ready",
+            description: `Prepared ${finalPreviewData.length} load records. Review matches, then click Update.`,
+            variant: "info",
+        });
+        setIsImportInfoOpen(true);
         setProcessing(false);
     };
 
@@ -312,14 +342,15 @@ export default function FactoringPage() {
                     if (!record.loadId) return;
                     const loadRef = doc(firestore, `companies/${companyId}/loads`, record.loadId);
 
-                    // We only update the factoringFee with the full prorated cost.
-                    // Advance amounts from the page are sometimes handled differently in settlement,
-                    // but we can update it if the user wants. The requirements say:
-                    // "Analyze the files and come up with a based way to calculate the factoring fees"
-                    currentBatch.update(loadRef, {
+                    const updateData: Record<string, unknown> = {
                         factoringFee: Number(record.totalFactoringCost.toFixed(2)),
-                        advance: Number(record.totalAdvance.toFixed(2))
-                    });
+                        advance: Number(record.totalAdvance.toFixed(2)),
+                    };
+                    if (record.brokerName?.trim()) {
+                        updateData.brokerName = record.brokerName.trim();
+                    }
+
+                    currentBatch.update(loadRef, updateData);
                 });
 
                 await currentBatch.commit();
@@ -334,10 +365,12 @@ export default function FactoringPage() {
                 previewData
             });
 
-            toast({
+            setImportInfo({
                 title: "Import Successful",
                 description: `Updated ${matched.length} loads and saved upload history.`,
+                variant: "success",
             });
+            setIsImportInfoOpen(true);
 
             // Reset
             setPreviewData([]);
@@ -345,11 +378,12 @@ export default function FactoringPage() {
 
         } catch (error) {
             console.error(error);
-            toast({
+            setImportInfo({
                 title: "Import Failed",
                 description: "Could not update records.",
-                variant: "destructive"
+                variant: "error",
             });
+            setIsImportInfoOpen(true);
         } finally {
             setUploading(false);
         }
@@ -452,6 +486,7 @@ export default function FactoringPage() {
                                             <TableHead className="w-12"></TableHead>
                                             <TableHead className="w-12">Match</TableHead>
                                             <TableHead>Load Number</TableHead>
+                                            <TableHead className="min-w-[120px]">Broker Name</TableHead>
                                             <TableHead className="text-right">Total Invoice</TableHead>
                                             <TableHead className="text-right">Total Advance</TableHead>
                                             <TableHead className="text-right text-destructive font-semibold">Total Cost</TableHead>
@@ -481,6 +516,7 @@ export default function FactoringPage() {
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="font-semibold">{group.loadNumber}</TableCell>
+                                                    <TableCell className="text-muted-foreground">{group.brokerName || '—'}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(group.totalInvoiceAmount)}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(group.totalAdvance)}</TableCell>
                                                     <TableCell className="text-right font-medium text-destructive">
@@ -490,13 +526,14 @@ export default function FactoringPage() {
 
                                                 {expandedRows.has(group.loadNumber) && (
                                                     <TableRow className="bg-muted/10">
-                                                        <TableCell colSpan={6} className="p-0 border-b">
+                                                        <TableCell colSpan={7} className="p-0 border-b">
                                                             <div className="py-2 pl-24 pr-4 border-l-4 border-l-primary/30">
                                                                 <Table className="border rounded-md bg-background overflow-hidden">
                                                                     <TableHeader className="bg-muted/40">
                                                                         <TableRow>
                                                                             <TableHead className="h-9 py-1 text-xs">Invoice #</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs">Date</TableHead>
+                                                                            <TableHead className="h-9 py-1 text-xs min-w-[100px]">Broker Name</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Amount</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Txn Fee</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Share of Primer/Wire</TableHead>
@@ -507,6 +544,7 @@ export default function FactoringPage() {
                                                                             <TableRow key={inv.invoiceId}>
                                                                                 <TableCell className="py-2 text-sm font-medium">{inv.invoiceId}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-muted-foreground">{inv.invoiceDate}</TableCell>
+                                                                                <TableCell className="py-2 text-sm text-muted-foreground">{inv.brokerName || '—'}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.invoiceAmount)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.transactionFee)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right text-muted-foreground">
@@ -590,6 +628,7 @@ export default function FactoringPage() {
                                                                     <TableHeader className="bg-muted/40">
                                                                         <TableRow>
                                                                             <TableHead className="h-9 py-1 text-xs">Load Number</TableHead>
+                                                                            <TableHead className="h-9 py-1 text-xs min-w-[100px]">Broker Name</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Invoices</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Total Amount</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Advance</TableHead>
@@ -600,6 +639,7 @@ export default function FactoringPage() {
                                                                         {(record.previewData || []).filter((g: any) => g.status === 'matched').map((group: any) => (
                                                                             <TableRow key={group.loadNumber}>
                                                                                 <TableCell className="py-2 text-sm font-medium">{group.loadNumber}</TableCell>
+                                                                                <TableCell className="py-2 text-sm text-muted-foreground">{group.brokerName || '—'}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right text-muted-foreground">{group.invoices?.length || 0}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(group.totalInvoiceAmount)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(group.totalAdvance)}</TableCell>
@@ -623,6 +663,40 @@ export default function FactoringPage() {
                     </Card>
                 </TabsContent>
             </Tabs>
+
+            <Dialog open={isImportInfoOpen} onOpenChange={setIsImportInfoOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>{importInfo?.title || "Import"}</DialogTitle>
+                        {importInfo?.description ? (
+                            <DialogDescription>{importInfo.description}</DialogDescription>
+                        ) : null}
+                    </DialogHeader>
+
+                    <div className="py-2">
+                        {importInfo?.variant === "success" ? (
+                            <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-100 rounded-md p-3">
+                                <CheckCircle className="h-5 w-5" />
+                                <span className="text-sm font-medium">Completed</span>
+                            </div>
+                        ) : importInfo?.variant === "error" ? (
+                            <div className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-100 rounded-md p-3">
+                                <AlertCircle className="h-5 w-5" />
+                                <span className="text-sm font-medium">Action needed</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 text-blue-700 bg-blue-50 border border-blue-100 rounded-md p-3">
+                                <Loader2 className="h-5 w-5" />
+                                <span className="text-sm font-medium">Info</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button onClick={() => setIsImportInfoOpen(false)}>OK</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
