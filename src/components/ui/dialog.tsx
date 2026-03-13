@@ -6,7 +6,27 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-const Dialog = DialogPrimitive.Root
+/**
+ * Wrapper around Radix Dialog Root that clears body pointer-events/overflow when closed.
+ * Radix can leave pointer-events: none on body after closing (e.g. via outside click), which blocks all interaction.
+ * @see https://github.com/radix-ui/primitives/issues/1241
+ */
+const Dialog = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>
+>(({ open, ...props }, ref) => {
+  React.useEffect(() => {
+    if (open === false) {
+      const id = setTimeout(() => {
+        document.body.style.removeProperty("pointer-events")
+        document.body.style.removeProperty("overflow")
+      }, 150)
+      return () => clearTimeout(id)
+    }
+  }, [open])
+  return <DialogPrimitive.Root ref={ref} open={open} {...props} />
+})
+Dialog.displayName = "Dialog"
 
 const DialogTrigger = DialogPrimitive.Trigger
 

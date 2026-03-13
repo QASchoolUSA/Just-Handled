@@ -1472,17 +1472,22 @@ export default function SettlementsPage() {
       </Tabs >
 
       {/* Forms remain unchanged */}
-      < LoadForm
+      <LoadForm
         isOpen={isLoadFormOpen}
-        onOpenChange={setIsLoadFormOpen}
+        onOpenChange={(open) => {
+          setIsLoadFormOpen(open);
+          if (!open) setEditingLoad(undefined);
+        }}
         onSave={handleSaveLoad}
         load={editingLoad}
-        drivers={drivers || []
-        }
+        drivers={drivers || []}
       />
-      < ExpenseForm
+      <ExpenseForm
         isOpen={isExpenseFormOpen}
-        onOpenChange={setIsExpenseFormOpen}
+        onOpenChange={(open) => {
+          setIsExpenseFormOpen(open);
+          if (!open) setEditingExpense(undefined);
+        }}
         onSave={handleSaveExpense}
         expense={editingExpense}
         drivers={drivers || []}
@@ -1498,7 +1503,7 @@ export default function SettlementsPage() {
         </DialogContent>
       </Dialog>
 
-      < Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen} >
+      <Dialog open={isImportResultOpen} onOpenChange={setIsImportResultOpen}>
         <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
@@ -1542,7 +1547,7 @@ export default function SettlementsPage() {
             <Button onClick={() => setIsImportResultOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog >
-    </div >
+      </Dialog>
+    </div>
   );
 }
