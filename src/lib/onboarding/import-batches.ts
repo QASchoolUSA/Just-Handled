@@ -40,7 +40,8 @@ export type ImportProgress = {
 };
 
 export type ImportResult = {
-  driversCreated: number;
+  /** Unique drivers after merge (one per person). Use this for display. */
+  uniqueDrivers: number;
   loadsCreated: number;
   errors: string[];
 };
@@ -249,5 +250,5 @@ export async function runOnboardingImport(
     });
   }
 
-  return { driversCreated, loadsCreated, errors };
+  return { uniqueDrivers: names.length, loadsCreated, errors };
 }

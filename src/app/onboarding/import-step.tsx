@@ -45,7 +45,7 @@ export function OnboardingImportStep({
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ driversCreated: number; loadsCreated: number } | null>(null);
+  const [result, setResult] = useState<{ uniqueDrivers: number; loadsCreated: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +60,7 @@ export function OnboardingImportStep({
           }
         );
         if (!cancelled) {
-          setResult({ driversCreated: res.driversCreated, loadsCreated: res.loadsCreated });
+          setResult({ uniqueDrivers: res.uniqueDrivers, loadsCreated: res.loadsCreated });
           setDone(true);
         }
       } catch (e: unknown) {
@@ -101,7 +101,7 @@ export function OnboardingImportStep({
         </div>
         <h3 className="font-semibold text-lg sm:text-xl">Import complete</h3>
         <p className="text-muted-foreground mt-1.5 text-sm sm:text-base">
-          {result.driversCreated.toLocaleString()} driver{result.driversCreated !== 1 ? 's' : ''} and{' '}
+          {result.uniqueDrivers.toLocaleString()} driver{result.uniqueDrivers !== 1 ? 's' : ''} and{' '}
           {result.loadsCreated.toLocaleString()} load{result.loadsCreated !== 1 ? 's' : ''} added.
         </p>
         <button
