@@ -448,9 +448,11 @@ export default function DriversPage() {
                     <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(driver.phoneNumber) || '-'}</TableCell>
                     <TableCell>
                       <div className="font-medium">
-                        {driver.payType === 'percentage'
-                          ? `${parseFloat((driver.rate * 100).toFixed(2))}%`
-                          : `${formatCurrency(driver.rate)}/mi`}
+                        {driver.payType != null && driver.rate != null
+                          ? driver.payType === 'percentage'
+                            ? `${parseFloat((driver.rate * 100).toFixed(2))}%`
+                            : `${formatCurrency(driver.rate)}/mi`
+                          : '—'}
                       </div>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">

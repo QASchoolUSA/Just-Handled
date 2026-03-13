@@ -172,11 +172,10 @@ export default function DashboardPage() {
     filteredLoads.forEach(load => {
       totalAdvances += safeParseNumber(load.advance);
       const driver = driverMap.get(load.driverId);
-      if (driver) {
+      if (driver && driver.payType != null && driver.rate != null) {
         const invoiceAmt = safeParseNumber(load.invoiceAmount);
         const miles = safeParseNumber(load.miles);
         const driverRate = safeParseNumber(driver.rate);
-
         if (driver.payType === 'percentage') {
           totalDriverGrossPay += invoiceAmt * driverRate;
         } else if (driver.payType === 'cpm' && miles > 0) {

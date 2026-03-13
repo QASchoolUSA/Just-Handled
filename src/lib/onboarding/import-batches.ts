@@ -96,8 +96,6 @@ export async function runOnboardingImport(
         lastName: lastName || '',
         unitId: truckId || '',
         status: 'active',
-        payType: 'percentage',
-        rate: 0.25,
         recurringDeductions: {
           insurance: 0,
           escrow: 0,

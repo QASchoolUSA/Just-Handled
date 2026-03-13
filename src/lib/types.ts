@@ -35,8 +35,8 @@ export type Driver = {
   unitHistory?: string[];
   status?: 'active' | 'inactive';
   terminationDate?: string;
-  payType: 'percentage' | 'cpm';
-  rate: number;
+  payType?: 'percentage' | 'cpm';
+  rate?: number;
   recurringDeductions: {
     insurance: number;
     escrow: number;

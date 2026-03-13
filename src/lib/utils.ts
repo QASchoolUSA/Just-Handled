@@ -97,6 +97,10 @@ export function normalizeDateFormat(dateStr: string): string {
 
 export function calculateDriverPay(load: Load, driver?: Driver) {
   if (!driver) return 0;
+  if (driver.payType == null || driver.rate == null) {
+    const extraPay = typeof load.extraStopsPay === 'number' ? load.extraStopsPay : 0;
+    return extraPay;
+  }
   let base: number;
   if (driver.payType === 'percentage') {
     base = load.invoiceAmount * driver.rate;
