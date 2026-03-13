@@ -10,19 +10,19 @@ export default function SubscriptionGuard({ children }: { children: React.ReactN
     const router = useRouter();
 
     React.useEffect(() => {
-        // Only run checks if we've successfully loaded a company profile
         if (!isCompanyLoading && company) {
+            const onboardingDone = company.onboardingCompleted === true || (company.onboardingSkippedAt != null && company.onboardingSkippedAt > 0);
+            if (!onboardingDone) {
+                router.push('/onboarding');
+                return;
+            }
 
-            // If they have no subscription object at all, let them pass (maybe very old dev data)
-            // Or force them out. For safety, let's enforce subscribe if there's an explicit failure state
             if (company.subscription) {
                 const sub = company.subscription;
-
                 if (sub.status === 'canceled' || sub.status === 'past_due') {
                     router.push('/subscribe');
                     return;
                 }
-
                 if (sub.status === 'trialing' && sub.trialEndsAt) {
                     const now = new Date().getTime();
                     if (now > sub.trialEndsAt) {

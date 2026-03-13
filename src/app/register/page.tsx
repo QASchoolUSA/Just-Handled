@@ -30,7 +30,7 @@ export default function RegisterPage() {
 
     React.useEffect(() => {
         if (user) {
-            router.push('/');
+            router.push('/onboarding');
         }
     }, [user, router]);
 
@@ -82,6 +82,7 @@ export default function RegisterPage() {
                 await setDoc(newCompanyRef, {
                     name: companyName,
                     createdAt: serverTimestamp(),
+                    onboardingCompleted: false,
                     subscription: {
                         status: 'trialing',
                         plan: 'trial',
@@ -108,11 +109,10 @@ export default function RegisterPage() {
 
             toast({
                 title: "Registration Successful",
-                description: "Welcome to Just Handled!",
+                description: "Welcome! Complete onboarding or skip to get started.",
             });
 
-            // Auth listener will handle the rest, but we can push just in case
-            router.push('/');
+            router.push('/onboarding');
         } catch (error: any) {
             console.error('Registration error:', error);
             let errorMessage = 'Failed to register. Please try again.';

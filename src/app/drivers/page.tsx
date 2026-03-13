@@ -431,7 +431,16 @@ export default function DriversPage() {
                         {toTitleCase(driver.status || 'Active')}
                       </Badge>
                     </TableCell>
-                    <TableCell>{driver.unitId || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-0.5">
+                        <span>{driver.unitId || '-'}</span>
+                        {driver.unitHistory && driver.unitHistory.length > 1 && (
+                          <span className="text-xs text-muted-foreground">
+                            also used: {driver.unitHistory.filter((u) => u !== driver.unitId).join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(driver.phoneNumber) || '-'}</TableCell>
                     <TableCell>
                       <div className="font-medium">

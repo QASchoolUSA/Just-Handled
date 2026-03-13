@@ -9,6 +9,10 @@ export type Company = {
     plan: 'trial' | 'pro';
     trialEndsAt?: number; // timestamp in MS
   };
+  /** Set when user completes the initial data import onboarding. */
+  onboardingCompleted?: boolean;
+  /** Set when user skips onboarding (timestamp in ms). */
+  onboardingSkippedAt?: number;
 };
 
 export type UserProfile = {
@@ -27,6 +31,8 @@ export type Driver = {
   email?: string;
   phoneNumber?: string;
   unitId?: string;
+  /** Trucks/units this driver has used (from load history). Current unitId is from latest load. */
+  unitHistory?: string[];
   status?: 'active' | 'inactive';
   terminationDate?: string;
   payType: 'percentage' | 'cpm';

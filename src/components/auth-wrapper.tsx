@@ -14,6 +14,10 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
         return <>{children}</>;
     }
 
+    if (pathname === '/onboarding') {
+        return <AuthGuard>{children}</AuthGuard>;
+    }
+
     return (
         <AuthGuard>
             <SubscriptionGuard>
