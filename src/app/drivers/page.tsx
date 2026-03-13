@@ -433,12 +433,16 @@ export default function DriversPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-0.5">
-                        <span>{driver.unitId || '-'}</span>
-                        {driver.unitHistory && driver.unitHistory.length > 1 && (
-                          <span className="text-xs text-muted-foreground">
-                            also used: {driver.unitHistory.filter((u) => u !== driver.unitId).join(', ')}
-                          </span>
-                        )}
+                        <span className="font-mono font-medium tabular-nums">{driver.unitId || '—'}</span>
+                        {driver.unitHistory && driver.unitHistory.length > 1 && (() => {
+                          const previous = driver.unitHistory.filter((u) => u && u !== driver.unitId);
+                          if (previous.length === 0) return null;
+                          return (
+                            <span className="text-xs text-muted-foreground">
+                              Previously assigned: {previous.join(', ')}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(driver.phoneNumber) || '-'}</TableCell>

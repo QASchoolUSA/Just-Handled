@@ -16,11 +16,24 @@ interface OnboardingImportStepProps {
 }
 
 function formatEta(ms: number): string {
-  if (ms < 1000) return 'Less than a second';
+  if (ms < 1000) return 'less than a second';
   const sec = Math.ceil(ms / 1000);
-  if (sec < 60) return `About ${sec} sec`;
+  if (sec < 60) return `~${sec} sec`;
   const min = Math.ceil(sec / 60);
-  return `About ${min} min`;
+  return `~${min} min`;
+}
+
+function phaseLabel(phase: ImportProgress['phase']): string {
+  switch (phase) {
+    case 'drivers':
+      return 'Creating drivers';
+    case 'loads':
+      return 'Importing loads';
+    case 'merging':
+      return 'Merging drivers';
+    default:
+      return 'Processing';
+  }
 }
 
 export function OnboardingImportStep({
@@ -71,26 +84,29 @@ export function OnboardingImportStep({
 
   if (error) {
     return (
-      <div className="py-8 text-center">
+      <div className="py-8 sm:py-10 text-center px-2">
         <p className="text-destructive font-medium">{error}</p>
-        <p className="text-sm text-muted-foreground mt-2">You can try again from the mapping step or skip onboarding.</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          You can try again from the mapping step or skip onboarding.
+        </p>
       </div>
     );
   }
 
   if (done && result) {
     return (
-      <div className="py-8 flex flex-col items-center justify-center text-center">
-        <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
+      <div className="py-8 sm:py-12 flex flex-col items-center justify-center text-center">
+        <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center mb-5">
           <CheckCircle2 className="h-8 w-8 text-green-600" />
         </div>
-        <h3 className="font-semibold text-lg">Import complete</h3>
-        <p className="text-muted-foreground mt-1">
-          {result.driversCreated} driver{result.driversCreated !== 1 ? 's' : ''} and {result.loadsCreated} load{result.loadsCreated !== 1 ? 's' : ''} added.
+        <h3 className="font-semibold text-lg sm:text-xl">Import complete</h3>
+        <p className="text-muted-foreground mt-1.5 text-sm sm:text-base">
+          {result.driversCreated.toLocaleString()} driver{result.driversCreated !== 1 ? 's' : ''} and{' '}
+          {result.loadsCreated.toLocaleString()} load{result.loadsCreated !== 1 ? 's' : ''} added.
         </p>
         <button
           onClick={onComplete}
-          className="mt-6 px-6 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90"
+          className="mt-6 px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
         >
           Go to dashboard
         </button>
@@ -98,20 +114,44 @@ export function OnboardingImportStep({
     );
   }
 
+  const phase = progress?.phase ?? 'drivers';
+  const eta =
+    progress?.estimatedMsRemaining != null && progress.estimatedMsRemaining > 0
+      ? formatEta(progress.estimatedMsRemaining)
+      : null;
+
   return (
-    <div className="py-8 space-y-6">
-      <div className="flex items-center justify-center gap-3">
-        <Loader2 className="h-6 w-6 text-primary animate-spin" />
-        <span className="font-medium">{progress?.message ?? 'Preparing...'}</span>
+    <div className="py-6 sm:py-8 space-y-6">
+      <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+        <Loader2 className="h-7 w-7 sm:h-8 sm:w-8 text-primary animate-spin shrink-0" />
+        <div className="text-center sm:text-left">
+          <p className="font-medium text-foreground">{phaseLabel(phase)}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {progress?.message ?? 'Preparing…'}
+          </p>
+        </div>
       </div>
-      <div className="space-y-2">
-        <Progress value={percent} className="h-3" />
-        <p className="text-sm text-muted-foreground text-center">
-          {currentStep} of {totalSteps} · {percent}%
-          {progress?.estimatedMsRemaining != null && progress.estimatedMsRemaining > 0 && (
-            <> · {formatEta(progress.estimatedMsRemaining)} remaining</>
+      <div className="space-y-3">
+        <Progress value={percent} className="h-2.5 sm:h-3" />
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            <span className="font-medium tabular-nums text-foreground">
+              {currentStep.toLocaleString()}
+            </span>
+            {' of '}
+            <span className="font-medium tabular-nums text-foreground">
+              {totalSteps.toLocaleString()}
+            </span>
+            {' · '}
+            <span className="font-medium tabular-nums text-foreground">{percent}%</span>
+          </span>
+          {eta && (
+            <>
+              <span className="hidden sm:inline text-muted-foreground/70">·</span>
+              <span>Est. {eta} left</span>
+            </>
           )}
-        </p>
+        </div>
       </div>
     </div>
   );
