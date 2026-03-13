@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -17,15 +17,19 @@ import {
 } from '@/components/ui/table';
 import {
   DollarSign,
-  BarChart,
   TrendingUp,
-  TrendingDown,
   Users,
   Route,
   CalendarIcon,
   Truck,
-  MapPin
+  MapPin,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import type { Load } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -60,6 +64,14 @@ export default function LoadboardPage() {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'dashboard' | 'loads'>('dashboard');
+
+  // All Loads: search, sort, pagination
+  const [loadSearch, setLoadSearch] = useState('');
+  type LoadSortKey = 'loadNumber' | 'pickupLocation' | 'deliveryLocation' | 'truckId' | 'miles' | 'invoiceAmount';
+  const [loadSortBy, setLoadSortBy] = useState<LoadSortKey>('loadNumber');
+  const [loadSortDir, setLoadSortDir] = useState<'asc' | 'desc'>('desc');
+  const [loadPage, setLoadPage] = useState(1);
+  const [loadPageSize, setLoadPageSize] = useState(25);
 
   // Calculate date range based on selected period
   const dateRange = useMemo(() => {
@@ -125,29 +137,93 @@ export default function LoadboardPage() {
     });
   }, [dashboardLoads, dateRange]);
 
-  // Sort all loads for table
-  const sortedTableLoads = useMemo(() => {
-     if (!allLoads) return [];
-     const sorted = [...allLoads].sort((a, b) => {
-        const dA = parseDateAny(a.pickupDate || a.deliveryDate).getTime();
-        const dB = parseDateAny(b.pickupDate || b.deliveryDate).getTime();
-        return dB - dA;
-     });
-
-     // Guard against accidental duplicates (e.g., duplicate loadNumber docs).
-     // Keep the most recent occurrence (since we sorted desc).
-     const seen = new Set<string>();
-     const deduped: Load[] = [];
-     for (const load of sorted) {
-       const key = (load.loadNumber ? `loadNumber:${load.loadNumber}` : `id:${load.id || ''}`).trim();
-       if (!key) continue;
-       if (seen.has(key)) continue;
-       seen.add(key);
-       deduped.push(load);
-     }
-
-     return deduped;
+  // Dedupe and base-sort all loads
+  const dedupedLoads = useMemo(() => {
+    if (!allLoads) return [];
+    const sorted = [...allLoads].sort((a, b) => {
+      const dA = parseDateAny(a.pickupDate || a.deliveryDate).getTime();
+      const dB = parseDateAny(b.pickupDate || b.deliveryDate).getTime();
+      return dB - dA;
+    });
+    const seen = new Set<string>();
+    const deduped: Load[] = [];
+    for (const load of sorted) {
+      const key = (load.loadNumber ? `loadNumber:${load.loadNumber}` : `id:${load.id || ''}`).trim();
+      if (!key) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(load);
+    }
+    return deduped;
   }, [allLoads]);
+
+  // Search by load #
+  const searchFilteredLoads = useMemo(() => {
+    const q = loadSearch.trim().toLowerCase();
+    if (!q) return dedupedLoads;
+    return dedupedLoads.filter((load) =>
+      String(load.loadNumber ?? '').toLowerCase().includes(q)
+    );
+  }, [dedupedLoads, loadSearch]);
+
+  // Sort
+  const sortedTableLoads = useMemo(() => {
+    const list = [...searchFilteredLoads];
+    const dir = loadSortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (loadSortBy) {
+        case 'loadNumber':
+          cmp = String(a.loadNumber ?? '').localeCompare(String(b.loadNumber ?? ''), undefined, { numeric: true });
+          break;
+        case 'pickupLocation':
+          cmp = String(a.pickupLocation ?? '').localeCompare(String(b.pickupLocation ?? ''));
+          break;
+        case 'deliveryLocation':
+          cmp = String(a.deliveryLocation ?? '').localeCompare(String(b.deliveryLocation ?? ''));
+          break;
+        case 'truckId':
+          cmp = String(a.truckId ?? '').localeCompare(String(b.truckId ?? ''));
+          break;
+        case 'miles':
+          cmp = safeParseNumber(a.miles) - safeParseNumber(b.miles);
+          break;
+        case 'invoiceAmount':
+          cmp = safeParseNumber(a.invoiceAmount) - safeParseNumber(b.invoiceAmount);
+          break;
+        default:
+          break;
+      }
+      return cmp * dir;
+    });
+    return list;
+  }, [searchFilteredLoads, loadSortBy, loadSortDir]);
+
+  // Pagination
+  const totalLoadsCount = sortedTableLoads.length;
+  const totalPages = Math.max(1, Math.ceil(totalLoadsCount / loadPageSize));
+  const safePage = Math.min(Math.max(1, loadPage), totalPages);
+  const paginatedLoads = useMemo(() => {
+    const start = (safePage - 1) * loadPageSize;
+    return sortedTableLoads.slice(start, start + loadPageSize);
+  }, [sortedTableLoads, safePage, loadPageSize]);
+
+  const handleLoadSort = (key: LoadSortKey) => {
+    if (loadSortBy === key) setLoadSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setLoadSortBy(key);
+      setLoadSortDir('desc');
+    }
+    setLoadPage(1);
+  };
+
+  useEffect(() => {
+    setLoadPage(1);
+  }, [loadSearch]);
+
+  useEffect(() => {
+    if (loadPage > totalPages) setLoadPage(totalPages);
+  }, [loadPage, totalPages]);
 
 
   // Derived Metrics
@@ -361,7 +437,7 @@ export default function LoadboardPage() {
 
       {activeTab === 'loads' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-           {allLoadsLoading ? (
+          {allLoadsLoading ? (
             <div className="bg-card rounded-xl border shadow-sm p-6">
               <div className="space-y-4">
                 <Skeleton className="h-10 w-full" />
@@ -370,60 +446,154 @@ export default function LoadboardPage() {
                 ))}
               </div>
             </div>
-           ) : (
-            <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">Load #</TableHead>
-                      <TableHead className="font-semibold px-4 py-3 min-w-[200px]">Pickup Location</TableHead>
-                      <TableHead className="font-semibold px-4 py-3 min-w-[200px]">Dropoff Location</TableHead>
-                      <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">Unit/Truck ID</TableHead>
-                      <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">Miles</TableHead>
-                      <TableHead className="font-semibold px-4 py-3 text-right whitespace-nowrap">Total Pay / Gross</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedTableLoads.length === 0 ? (
+          ) : (
+            <>
+              <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by Load #"
+                    value={loadSearch}
+                    onChange={(e) => setLoadSearch(e.target.value)}
+                    className="pl-9 h-10 rounded-lg"
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Rows per page</span>
+                  <select
+                    value={loadPageSize}
+                    onChange={(e) => {
+                      setLoadPageSize(Number(e.target.value));
+                      setLoadPage(1);
+                    }}
+                    className="h-10 rounded-lg border bg-background px-3 py-1.5 text-foreground"
+                  >
+                    {[10, 25, 50, 100].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
                       <TableRow>
-                        <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
-                          No loads found.
-                        </TableCell>
+                        <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadSort('loadNumber')}
+                            className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                          >
+                            Load #
+                            {loadSortBy === 'loadNumber' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 min-w-[200px]">
+                          <button type="button" onClick={() => handleLoadSort('pickupLocation')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Pickup Location
+                            {loadSortBy === 'pickupLocation' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 min-w-[200px]">
+                          <button type="button" onClick={() => handleLoadSort('deliveryLocation')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Dropoff Location
+                            {loadSortBy === 'deliveryLocation' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">
+                          <button type="button" onClick={() => handleLoadSort('truckId')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Unit/Truck ID
+                            {loadSortBy === 'truckId' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 whitespace-nowrap">
+                          <button type="button" onClick={() => handleLoadSort('miles')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Miles
+                            {loadSortBy === 'miles' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 text-right whitespace-nowrap">
+                          <button type="button" onClick={() => handleLoadSort('invoiceAmount')} className="inline-flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
+                            Total Pay / Gross
+                            {loadSortBy === 'invoiceAmount' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
                       </TableRow>
-                    ) : (
-                      sortedTableLoads.map((load) => (
-                        <TableRow key={load.id} className="hover:bg-muted/30 transition-colors">
-                          <TableCell className="px-4 py-3 font-medium">#{load.loadNumber}</TableCell>
-                          <TableCell className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
-                              <span className="truncate max-w-[250px] inline-block" title={load.pickupLocation}>{load.pickupLocation}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-4 py-3">
-                             <div className="flex items-center gap-2">
-                              <MapPin className="h-3 w-3 text-rose-500 shrink-0" />
-                              <span className="truncate max-w-[250px] inline-block" title={load.deliveryLocation}>{load.deliveryLocation}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-muted-foreground">
-                            {load.truckId || '-'}
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-muted-foreground">
-                            {safeParseNumber(load.miles).toLocaleString()} mi
-                          </TableCell>
-                          <TableCell className="px-4 py-3 text-right font-medium text-foreground">
-                            {formatCurrency(safeParseNumber(load.invoiceAmount))}
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedLoads.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
+                            {searchFilteredLoads.length === 0 && loadSearch.trim()
+                              ? 'No loads match that Load #.'
+                              : 'No loads found.'}
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : (
+                        paginatedLoads.map((load) => (
+                          <TableRow key={load.id} className="hover:bg-muted/30 transition-colors">
+                            <TableCell className="px-4 py-3 font-medium">#{load.loadNumber}</TableCell>
+                            <TableCell className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
+                                <span className="truncate max-w-[250px] inline-block" title={load.pickupLocation}>{load.pickupLocation}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-3 w-3 text-rose-500 shrink-0" />
+                                <span className="truncate max-w-[250px] inline-block" title={load.deliveryLocation}>{load.deliveryLocation}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-muted-foreground">
+                              {load.truckId || '-'}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-muted-foreground">
+                              {safeParseNumber(load.miles).toLocaleString()} mi
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right font-medium text-foreground">
+                              {formatCurrency(safeParseNumber(load.invoiceAmount))}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                {totalLoadsCount > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t bg-muted/20 text-sm text-muted-foreground">
+                    <span>
+                      {(safePage - 1) * loadPageSize + 1}–{Math.min(safePage * loadPageSize, totalLoadsCount)} of {totalLoadsCount.toLocaleString()}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={() => setLoadPage((p) => Math.max(1, p - 1))}
+                        disabled={safePage <= 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="min-w-[120px] text-center font-medium text-foreground">
+                        Page {safePage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={() => setLoadPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={safePage >= totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-           )}
+            </>
+          )}
         </div>
       )}
     </div>
