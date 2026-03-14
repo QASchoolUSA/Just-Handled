@@ -97,16 +97,20 @@ export function normalizeDateFormat(dateStr: string): string {
 
 export function calculateDriverPay(load: Load, driver?: Driver) {
   if (!driver) return 0;
-  if (driver.payType == null || driver.rate == null) {
-    const extraPay = typeof load.extraStopsPay === 'number' ? load.extraStopsPay : 0;
-    return extraPay;
+  const rate = parseNumber(driver.rate);
+  const payType = driver.payType;
+  if (payType != 'percentage' && payType != 'cpm') {
+    return parseNumber(load.extraStopsPay);
+  }
+  if (rate === 0) {
+    return parseNumber(load.extraStopsPay);
   }
   let base: number;
-  if (driver.payType === 'percentage') {
-    base = load.invoiceAmount * driver.rate;
+  if (payType === 'percentage') {
+    base = parseNumber(load.invoiceAmount) * rate;
   } else {
-    base = (load.miles || 0) * driver.rate;
+    base = parseNumber(load.miles) * rate;
   }
-  const extraPay = typeof load.extraStopsPay === 'number' ? load.extraStopsPay : 0;
+  const extraPay = parseNumber(load.extraStopsPay);
   return base + extraPay;
 }

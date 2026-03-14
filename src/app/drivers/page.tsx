@@ -32,7 +32,7 @@ import type { Driver, Load, Expense } from '@/lib/types';
 import { formatCurrency, toTitleCase, formatPhoneNumber, calculateDriverPay } from '@/lib/utils';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { useFirestore, useCompany } from '@/firebase/provider';
-import { collection, doc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs } from 'firebase/firestore';
 import { format, subDays, startOfDay, endOfDay, isWithinInterval, parseISO, parse } from 'date-fns';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { parseDriverTariff } from '@/lib/driver-tariff';
@@ -76,37 +76,36 @@ export default function DriversPage() {
     return { start: startOfDay(subDays(end, days)), end: endOfDay(end) };
   }, [selectedPeriod, customStartDate, customEndDate]);
 
-  const loadsQuery = useMemoFirebase(() => {
-    if (!firestore || !companyId) return null;
-    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
-    const toStr = format(dateRange.end, 'yyyy-MM-dd');
-    return query(
-      collection(firestore, `companies/${companyId}/loads`),
-      where('deliveryDate', '>=', fromStr),
-      where('deliveryDate', '<=', toStr)
-    );
-  }, [firestore, companyId, dateRange.start, dateRange.end]);
-
-  const expensesQuery = useMemoFirebase(() => {
-    if (!firestore || !companyId) return null;
-    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
-    const toStr = format(dateRange.end, 'yyyy-MM-dd');
-    return query(
-      collection(firestore, `companies/${companyId}/expenses`),
-      where('date', '>=', fromStr),
-      where('date', '<=', toStr + 'T23:59:59.999Z')
-    );
-  }, [firestore, companyId, dateRange.start, dateRange.end]);
-
-  const { data: loads } = useCollection<Load>(loadsQuery);
-  const { data: expenses } = useCollection<Expense>(expensesQuery);
-
   const parseDate = (dateStr: string) => {
     if (!dateStr) return new Date();
     if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return parseISO(dateStr.split('T')[0]);
     const p = parse(dateStr, 'dd-MMM-yy', new Date());
     return isNaN(p.getTime()) ? new Date() : p;
   };
+
+  const loadsCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/loads`) : null, [firestore, companyId]);
+  const expensesCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/expenses`) : null, [firestore, companyId]);
+
+  const { data: loadsRaw } = useCollection<Load>(loadsCollection);
+  const { data: expensesRaw } = useCollection<Expense>(expensesCollection);
+
+  const loads = useMemo(() => {
+    if (!loadsRaw) return null;
+    const interval = { start: dateRange.start, end: dateRange.end };
+    return loadsRaw.filter(load => {
+      const d = parseDate(load.deliveryDate ?? '');
+      return isWithinInterval(d, interval);
+    });
+  }, [loadsRaw, dateRange]);
+
+  const expenses = useMemo(() => {
+    if (!expensesRaw) return null;
+    const interval = { start: dateRange.start, end: dateRange.end };
+    return expensesRaw.filter(exp => {
+      const d = parseDate(exp.date ?? '');
+      return isWithinInterval(d, interval);
+    });
+  }, [expensesRaw, dateRange]);
 
   const driverEarnings = useMemo(() => {
     if (!drivers || !loads || !expenses) return [];
