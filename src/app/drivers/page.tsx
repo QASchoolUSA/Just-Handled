@@ -7,7 +7,6 @@ import { ImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -247,24 +246,6 @@ export default function DriversPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDownloadTemplate = () => {
-    const csvData = [
-      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Driver Tariff (e.g. .60 cpm or 30% from gross)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls', 'Termination Date'],
-      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '', '100', '50', '35', '25', '200', '50', ''],
-      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '', '150', '0', '35', '0', '0', '0', '2023-12-31'],
-      ['Bob', 'Wilson', '103', '', '', '', '', '30% from gross', '0', '0', '35', '0', '0', '0', '']
-    ];
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'driver_import_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
@@ -503,9 +484,6 @@ export default function DriversPage() {
             ref={fileInputRef}
             onChange={handleImportFile}
           />
-          <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl">
-            <Download className="mr-2 h-4 w-4" /> Template
-          </Button>
           <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
             {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
             {isImporting ? 'Importing...' : 'Import CSV/Excel'}

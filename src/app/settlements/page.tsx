@@ -32,7 +32,6 @@ import type { Load, Driver, Expense, AccountSettings, Owner, SettlementSummary, 
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
 import { formatCurrency, downloadCsv, parseNumber, normalizeDateFormat, toTitleCase, calculateDriverPay } from '@/lib/utils';
 import { exportInvoicesAsCsv, exportJournalAsCsv } from '@/lib/exports/csv-exports';
-import Papa from 'papaparse';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { useCompany } from '@/firebase/provider';
 import { collection, doc, query, where, getDocs, limit, writeBatch } from 'firebase/firestore';
@@ -454,33 +453,6 @@ export default function SettlementsPage() {
   const loadFileInputRef = React.useRef<HTMLInputElement>(null);
   const expenseFileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleGenerateLoadTemplate = () => {
-    const csvData = [
-      [
-        'Load #', 'Driver Name', 'Pickup Date', 'Delivery Date', 'Broker ID',
-        'Invoice ID', 'Trailer Number', 'Truck ID',
-        'Miles', 'Empty Miles', 'Pickup Location', 'Delivery Location',
-        'Invoice Amount', 'Reserve Amount', 'Prime Rate Surcharge', 'Transaction Fee',
-        'Factoring Fee', 'Advance', 'Extra Stops', 'Extra Stops Pay'
-      ],
-      [
-        '12345', 'John Doe', '2025-01-01', '2025-01-03', 'BROKER-1',
-        'INV-001', 'Trailer-500', 'Truck-101',
-        '500', '50', 'Los Angeles, CA', 'New York, NY',
-        '1350.00', '0.00', '0.00', '0.00',
-        '35.00', '0.00', '2', '75.00'
-      ],
-    ];
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'load_import_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
   const handleImportLoadsClick = () => {
     loadFileInputRef.current?.click();
   };
@@ -681,23 +653,6 @@ export default function SettlementsPage() {
     setImportResult({ successCount, errors, skippedCount });
     setIsImportResultOpen(true);
     setLoadImportParsed(null);
-  };
-
-  const handleGenerateExpenseTemplate = () => {
-    const csvData = [
-      ['Date', 'Description', 'Unit ID', 'Amount', 'Gallons', 'State', 'Bill To (D/O/C)', 'Expense Type'],
-      ['2023-10-01', 'Trailer Repair', '1001', '500.00', '', 'NY', 'D', 'Repair'],
-      ['2023-10-02', 'Fuel', '1001', '200.00', '50', 'CA', 'C', 'Fuel'],
-    ];
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'expense_import_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const handleImportExpensesClick = () => {
@@ -1001,9 +956,6 @@ export default function SettlementsPage() {
                 {/* Actions - Grouped */}
                 <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
                   <input type="file" accept=".csv,.xlsx,.xls" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
-                  <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
-                    <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
-                  </Button>
                   <Button variant="outline" size="sm" onClick={handleImportLoadsClick} className="rounded-lg h-9 flex-1 sm:flex-none" title="Import CSV">
                     <Upload className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Import</span>
                   </Button>
@@ -1225,9 +1177,6 @@ export default function SettlementsPage() {
                 {/* Actions - Grouped */}
                 <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
                   <input type="file" accept=".csv,.xlsx,.xls" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
-                  <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
-                    <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
-                  </Button>
                   <Button variant="outline" size="sm" onClick={handleImportExpensesClick} disabled={isImporting} className="rounded-lg h-9 flex-1 sm:flex-none" title="Import CSV">
                     <Upload className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Import</span>
                   </Button>

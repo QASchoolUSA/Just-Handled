@@ -26,7 +26,6 @@ import { useCollection, useMemoFirebase } from '@/firebase';
 import { useFirestore, useCompany } from '@/firebase/provider';
 import { collection, doc } from 'firebase/firestore';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import Papa from 'papaparse';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { parseUploadedFile } from '@/lib/onboarding/parse-file';
@@ -112,23 +111,6 @@ export default function OwnersPage() {
     };
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleDownloadTemplate = () => {
-        const csvData = [
-            ['Name', 'Unit ID', 'Percentage (e.g. 0.88)', 'Fuel Rebate (e.g. 0.5 for 50%)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls'],
-            ['Acme Transit LLC', '101', '0.88', '0.50', '150', '50', '35', '25', '250', '60'],
-            ['Redline Logistics', '102', '0.90', '0', '200', '0', '35', '0', '0', '0']
-        ];
-        const csv = Papa.unparse(csvData);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', 'owner_import_template.csv');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
 
     const handleImportClick = () => {
         fileInputRef.current?.click();
@@ -261,9 +243,6 @@ export default function OwnersPage() {
                         ref={fileInputRef}
                         onChange={handleImportFile}
                     />
-                    <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl">
-                        <Download className="mr-2 h-4 w-4" /> Template
-                    </Button>
                     <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
                         {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                         {isImporting ? 'Importing...' : 'Import CSV/Excel'}

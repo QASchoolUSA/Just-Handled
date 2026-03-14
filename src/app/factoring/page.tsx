@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, FileText, Clock } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -18,7 +18,6 @@ import { useFirestore } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
 import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimestamp, onSnapshot, orderBy } from "firebase/firestore";
 import type { Load } from "@/lib/types";
-import * as Papa from "papaparse";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { parseUploadedFile } from "@/lib/onboarding/parse-file";
 import type { ParsedFile } from "@/lib/onboarding/types";
@@ -126,24 +125,6 @@ export default function FactoringPage() {
             newExpanded.add(loadNumber);
         }
         setExpandedRows(newExpanded);
-    };
-
-    const handleDownloadTemplate = () => {
-        const csvData = [
-            ['Load Number', 'Invoice Number', 'Invoice Date', 'Invoice Amount', 'Advance Amount', 'Transaction Fee', 'Prime Surcharge', 'Wire Fee', 'Broker Name'],
-            ['1001A', 'IN-00123', '03/01/2026', '5000', '4950', '50', '15', '25', 'ABC Logistics'],
-            ['1002B', 'IN-00124', '03/01/2026', '2000', '1980', '20', '', '', ''],
-            ['1003C', 'IN-00125', '03/02/2026', '3500', '3465', '35', '', '', 'XYZ Freight'],
-        ];
-        const csv = Papa.unparse(csvData);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', 'factoring_import_template.csv');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     };
 
     const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -427,7 +408,7 @@ export default function FactoringPage() {
 
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold tracking-tight">Factoring Integration</h1>
-                <p className="text-muted-foreground">Import Factoring advances via scheduled Template CSV to accurately prorate factoring costs per load.</p>
+                <p className="text-muted-foreground">Import Factoring advances via CSV or Excel to accurately prorate factoring costs per load.</p>
             </div>
 
             <Tabs defaultValue="new-import" className="space-y-6">
@@ -442,16 +423,13 @@ export default function FactoringPage() {
                         <Card className="border-dashed border-2">
                             <CardHeader className="text-center">
                                 <CardTitle>Import Factoring Advances</CardTitle>
-                                <CardDescription>Download the template, fill in your advances and fees, and upload the CSV to sync with your loads.</CardDescription>
+                                <CardDescription>Upload a CSV or Excel file with your advances and fees; map columns in the next step to sync with your loads.</CardDescription>
                             </CardHeader>
                             <CardContent className="flex flex-col items-center justify-center py-12 gap-6">
                                 <div className="p-6 rounded-full bg-primary/10 text-primary">
                                     <Upload className="h-12 w-12" />
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <Button variant="outline" onClick={handleDownloadTemplate} className="rounded-xl h-12 px-6">
-                                        <FileText className="mr-2 h-4 w-4" /> Download Template
-                                    </Button>
                                     <Button className="rounded-xl h-12 px-6 relative overflow-hidden" disabled={processing}>
                                         {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                                         {processing ? "Parsing CSV..." : "Select Import CSV"}
@@ -601,7 +579,7 @@ export default function FactoringPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-xl">Past Uploads</CardTitle>
-                            <CardDescription>History of successfully imported factoring templates.</CardDescription>
+                            <CardDescription>History of successfully imported factoring files.</CardDescription>
                         </CardHeader>
                         <Table>
                             <TableHeader>
