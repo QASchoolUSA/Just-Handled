@@ -6,22 +6,42 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+function clearBodyScrollLock() {
+  document.body.style.removeProperty("pointer-events")
+  document.body.style.removeProperty("overflow")
+}
+
 /**
  * Wrapper around Radix Dialog Root that clears body pointer-events/overflow when closed.
  * Radix can leave pointer-events: none on body after closing (e.g. via outside click), which blocks all interaction.
  * @see https://github.com/radix-ui/primitives/issues/1241
  */
-function Dialog({ open, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+function Dialog({ open, onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
   React.useEffect(() => {
     if (open === false) {
-      const id = setTimeout(() => {
-        document.body.style.removeProperty("pointer-events")
-        document.body.style.removeProperty("overflow")
-      }, 150)
-      return () => clearTimeout(id)
+      clearBodyScrollLock()
+      const t1 = setTimeout(clearBodyScrollLock, 50)
+      const t2 = setTimeout(clearBodyScrollLock, 200)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+      }
     }
   }, [open])
-  return <DialogPrimitive.Root open={open} {...props} />
+
+  React.useEffect(() => {
+    return () => clearBodyScrollLock()
+  }, [])
+
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      if (!next) clearBodyScrollLock()
+      onOpenChange?.(next)
+    },
+    [onOpenChange]
+  )
+
+  return <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange} {...props} />
 }
 Dialog.displayName = "Dialog"
 
