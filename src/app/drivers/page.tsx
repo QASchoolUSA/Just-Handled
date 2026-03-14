@@ -282,11 +282,15 @@ export default function DriversPage() {
 
     const existingSnap = await getDocs(driversCollection);
     const existingByKey = new Map<string, Driver & { id: string }>();
+    const normalizeNameKey = (first: string, last: string) => {
+      const f = (first || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const l = (last || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      return `${f}::${l}`;
+    };
     existingSnap.forEach((d) => {
       const data = d.data() as Driver;
-      const first = (data.firstName || '').trim().toLowerCase();
-      const last = (data.lastName || '').trim().toLowerCase();
-      existingByKey.set(`${first}::${last}`, { ...data, id: d.id });
+      const key = normalizeNameKey(data.firstName ?? '', data.lastName ?? '');
+      existingByKey.set(key, { ...data, id: d.id });
     });
 
     for (let i = 0; i < rows.length; i++) {
@@ -308,11 +312,13 @@ export default function DriversPage() {
         if (lastVal != null && String(lastVal).trim() !== '') {
           lastName = String(lastVal).trim();
         } else if (nameStr.includes(' ')) {
-          const parts = nameStr.split(/\s+/);
+          const parts = nameStr.split(/\s+/).filter(Boolean);
           firstName = parts[0] ?? '';
-          lastName = parts.slice(1).join(' ');
+          lastName = parts.slice(1).join(' ').trim();
         }
-        const nameKey = `${firstName.toLowerCase()}::${lastName.toLowerCase()}`;
+        firstName = firstName.trim();
+        lastName = lastName.trim();
+        const nameKey = normalizeNameKey(firstName, lastName);
 
         const payTypeCol = get(row, 'payType');
         const rateCol = get(row, 'rate');
@@ -364,7 +370,10 @@ export default function DriversPage() {
           await setDocumentNonBlocking(driverDoc, payload, { merge: true });
           updatedCount++;
         } else {
-          await addDocumentNonBlocking(driversCollection, payload);
+          const docRef = await addDocumentNonBlocking(driversCollection, payload);
+          if (docRef?.id) {
+            existingByKey.set(nameKey, { ...payload, id: docRef.id } as Driver & { id: string });
+          }
           successCount++;
         }
       } catch (err: any) {
