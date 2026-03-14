@@ -23,6 +23,14 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { Bar, BarChart, XAxis, YAxis } from 'recharts';
+import { DollarSign, Truck, Users, Wallet } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const DriverForm = dynamic(() => import('@/components/driver-form').then(mod => mod.DriverForm), { ssr: false });
@@ -444,13 +452,38 @@ export default function DriversPage() {
   };
 
 
+  const chartGrossData = useMemo(() => {
+    return [...driverEarnings].sort((a, b) => b.grossPay - a.grossPay).slice(0, 12).map(r => ({
+      name: r.driverName.length > 14 ? r.driverName.slice(0, 12) + '…' : r.driverName,
+      fullName: r.driverName,
+      grossPay: Math.round(r.grossPay * 100) / 100,
+    }));
+  }, [driverEarnings]);
+
+  const chartLoadsData = useMemo(() => {
+    return [...driverEarnings].sort((a, b) => b.loadCount - a.loadCount).slice(0, 12).map(r => ({
+      name: r.driverName.length > 14 ? r.driverName.slice(0, 12) + '…' : r.driverName,
+      fullName: r.driverName,
+      loads: r.loadCount,
+    }));
+  }, [driverEarnings]);
+
+  const grossPayChartConfig: ChartConfig = {
+    name: { label: 'Driver' },
+    grossPay: { label: 'Gross Pay', color: 'hsl(var(--chart-1))' },
+  };
+  const loadsChartConfig: ChartConfig = {
+    name: { label: 'Driver' },
+    loads: { label: 'Loads', color: 'hsl(var(--chart-2))' },
+  };
+
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Driver Profiles</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Drivers</h1>
           <p className="text-muted-foreground text-lg">
-            Manage your drivers and their pay structures.
+            Manage driver profiles and view earnings by period.
             {drivers && drivers.length > 0 && (
               <>
                 <span className="ml-2 inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
@@ -501,129 +534,16 @@ export default function DriversPage() {
         }}
       />
 
-      {/* Driver earnings scoreboard */}
-      <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
-        <CardHeader className="bg-muted/30 border-b border-border/40">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-1 flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle className="font-display">Driver Earnings</CardTitle>
-                <CardDescription>Gross pay, deductions, and net pay by period.</CardDescription>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Tabs value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as Period)}>
-                <TabsList className="grid grid-cols-6 max-w-2xl">
-                  <TabsTrigger value="7d">Week</TabsTrigger>
-                  <TabsTrigger value="30d">Month</TabsTrigger>
-                  <TabsTrigger value="90d">3M</TabsTrigger>
-                  <TabsTrigger value="180d">6M</TabsTrigger>
-                  <TabsTrigger value="365d">Year</TabsTrigger>
-                  <TabsTrigger value="custom">Custom</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              {selectedPeriod === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customStartDate ? format(customStartDate, 'LLL d, yyyy') : 'Start'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customStartDate}
-                        onSelect={setCustomStartDate}
-                        disabled={(date) => (customEndDate ? date > customEndDate : false)}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <span className="text-muted-foreground text-sm">to</span>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customEndDate ? format(customEndDate, 'LLL d, yyyy') : 'End'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customEndDate}
-                        onSelect={setCustomEndDate}
-                        disabled={(date) => (customStartDate ? date < customStartDate : false)}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground hidden sm:inline">
-                {format(dateRange.start, 'MMM d, yyyy')} – {format(dateRange.end, 'MMM d, yyyy')}
-              </p>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-6">Driver</TableHead>
-                <TableHead>Unit ID</TableHead>
-                <TableHead className="text-right">Loads</TableHead>
-                <TableHead className="text-right">Gross Pay</TableHead>
-                <TableHead className="text-right">Deductions</TableHead>
-                <TableHead className="text-right">Net Pay</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {driverEarnings.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    No earnings in this period. Change the range or add loads.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                driverEarnings.map((row) => (
-                  <TableRow key={row.driverId} className="hover:bg-muted/50">
-                    <TableCell className="font-medium pl-6">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-8 w-8 border border-border/50">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                            {row.driverName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        {row.driverName}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{row.unitId || '—'}</TableCell>
-                    <TableCell className="text-right font-mono">{row.loadCount}</TableCell>
-                    <TableCell className="text-right font-medium text-green-700 dark:text-green-400">{formatCurrency(row.grossPay)}</TableCell>
-                    <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(row.totalDeductions)}</TableCell>
-                    <TableCell className="text-right font-semibold">{formatCurrency(row.netPay)}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-            {driverEarnings.length > 0 && (
-              <TableFooter>
-                <TableRow className="bg-muted/50 font-semibold hover:bg-muted/50">
-                  <TableCell className="pl-6">Total</TableCell>
-                  <TableCell />
-                  <TableCell className="text-right font-mono">{scoreboardTotals.loadCount}</TableCell>
-                  <TableCell className="text-right text-green-700 dark:text-green-400">{formatCurrency(scoreboardTotals.grossPay)}</TableCell>
-                  <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(scoreboardTotals.totalDeductions)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(scoreboardTotals.netPay)}</TableCell>
-                </TableRow>
-              </TableFooter>
-            )}
-          </Table>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="drivers" className="space-y-6">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="drivers" className="rounded-xl">Drivers</TabsTrigger>
+          <TabsTrigger value="earnings" className="rounded-xl flex items-center gap-2">
+            <Trophy className="h-4 w-4" /> Driver Earnings
+          </TabsTrigger>
+        </TabsList>
 
-      <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
+        <TabsContent value="drivers" className="mt-0">
+          <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
         <CardHeader className="bg-muted/30 border-b border-border/40">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="space-y-1">
@@ -742,6 +662,222 @@ export default function DriversPage() {
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="earnings" className="mt-0 space-y-6">
+          <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
+            <CardHeader className="bg-muted/30 border-b border-border/40">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1 flex items-center gap-2">
+                  <Trophy className="h-5 w-5 text-primary" />
+                  <div>
+                    <CardTitle className="font-display">Earnings by period</CardTitle>
+                    <CardDescription>Select a range, then view scoreboard and charts below.</CardDescription>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tabs value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as Period)}>
+                    <TabsList className="grid grid-cols-6 max-w-2xl">
+                      <TabsTrigger value="7d">Week</TabsTrigger>
+                      <TabsTrigger value="30d">Month</TabsTrigger>
+                      <TabsTrigger value="90d">3M</TabsTrigger>
+                      <TabsTrigger value="180d">6M</TabsTrigger>
+                      <TabsTrigger value="365d">Year</TabsTrigger>
+                      <TabsTrigger value="custom">Custom</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  {selectedPeriod === 'custom' && (
+                    <div className="flex items-center gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {customStartDate ? format(customStartDate, 'LLL d, yyyy') : 'Start'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={customStartDate}
+                            onSelect={setCustomStartDate}
+                            disabled={(date) => (customEndDate ? date > customEndDate : false)}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <span className="text-muted-foreground text-sm">to</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {customEndDate ? format(customEndDate, 'LLL d, yyyy') : 'End'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={customEndDate}
+                            onSelect={setCustomEndDate}
+                            disabled={(date) => (customStartDate ? date < customStartDate : false)}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  )}
+                  <p className="text-sm text-muted-foreground hidden sm:inline">
+                    {format(dateRange.start, 'MMM d, yyyy')} – {format(dateRange.end, 'MMM d, yyyy')}
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {driverEarnings.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="rounded-xl border-border/50">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-green-500/10">
+                      <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Total Gross Pay</p>
+                      <p className="text-xl font-bold">{formatCurrency(scoreboardTotals.grossPay)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl border-border/50">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Wallet className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Total Net Pay</p>
+                      <p className="text-xl font-bold">{formatCurrency(scoreboardTotals.netPay)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl border-border/50">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/10">
+                      <Truck className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Total Loads</p>
+                      <p className="text-xl font-bold">{scoreboardTotals.loadCount}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl border-border/50">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-500/10">
+                      <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Drivers with activity</p>
+                      <p className="text-xl font-bold">{driverEarnings.length}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <Card className="rounded-xl overflow-hidden border-border/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Gross pay by driver (top 12)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={grossPayChartConfig} className="h-[280px] w-full">
+                      <BarChart data={chartGrossData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                        <XAxis type="number" tickFormatter={(v: unknown) => formatCurrency(Number(v))} />
+                        <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                        <Bar dataKey="grossPay" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl overflow-hidden border-border/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Loads by driver (top 12)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={loadsChartConfig} className="h-[280px] w-full">
+                      <BarChart data={chartLoadsData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                        <XAxis type="number" />
+                        <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                        <Bar dataKey="loads" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+
+          <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
+            <CardHeader className="bg-muted/30 border-b border-border/40">
+              <CardTitle className="font-display">Scoreboard</CardTitle>
+              <CardDescription>Per-driver breakdown for the selected period.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6">Driver</TableHead>
+                    <TableHead>Unit ID</TableHead>
+                    <TableHead className="text-right">Loads</TableHead>
+                    <TableHead className="text-right">Gross Pay</TableHead>
+                    <TableHead className="text-right">Deductions</TableHead>
+                    <TableHead className="text-right">Net Pay</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {driverEarnings.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                        No earnings in this period. Change the range or add loads.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    driverEarnings.map((row) => (
+                      <TableRow key={row.driverId} className="hover:bg-muted/50">
+                        <TableCell className="font-medium pl-6">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8 border border-border/50">
+                              <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                                {row.driverName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            {row.driverName}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-muted-foreground">{row.unitId || '—'}</TableCell>
+                        <TableCell className="text-right font-mono">{row.loadCount}</TableCell>
+                        <TableCell className="text-right font-medium text-green-700 dark:text-green-400">{formatCurrency(row.grossPay)}</TableCell>
+                        <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(row.totalDeductions)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatCurrency(row.netPay)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+                {driverEarnings.length > 0 && (
+                  <TableFooter>
+                    <TableRow className="bg-muted/50 font-semibold hover:bg-muted/50">
+                      <TableCell className="pl-6">Total</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono">{scoreboardTotals.loadCount}</TableCell>
+                      <TableCell className="text-right text-green-700 dark:text-green-400">{formatCurrency(scoreboardTotals.grossPay)}</TableCell>
+                      <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(scoreboardTotals.totalDeductions)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(scoreboardTotals.netPay)}</TableCell>
+                    </TableRow>
+                  </TableFooter>
+                )}
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <DriverForm
         isOpen={isFormOpen}
