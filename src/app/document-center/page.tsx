@@ -254,6 +254,8 @@ export default function AnalyzeDocsPage() {
     // Pagination State
     const [receiptLimit, setReceiptLimit] = useState(15);
     const [loadingReceipts, setLoadingReceipts] = useState(true);
+    const [receiptsLoadError, setReceiptsLoadError] = useState<string | null>(null);
+    const [unitsLoadError, setUnitsLoadError] = useState<string | null>(null);
 
     // Queue Pagination State
     const [queuePage, setQueuePage] = useState(1);
@@ -278,6 +280,7 @@ export default function AnalyzeDocsPage() {
     useEffect(() => {
         if (!user || !firestore || !companyId) return;
         setLoadingReceipts(true);
+        setReceiptsLoadError(null);
 
         const q = query(
             collection(firestore, `companies/${companyId}/receipts`),
@@ -291,14 +294,16 @@ export default function AnalyzeDocsPage() {
                 ...doc.data()
             })) as SavedReceipt[];
             setSavedReceipts(receipts);
+            setReceiptsLoadError(null);
             setLoadingReceipts(false);
-        }, (err) => {
+        }, (err: any) => {
             console.error("Error fetching receipts:", err);
+            setReceiptsLoadError(err?.message || "Failed to load receipts.");
             setLoadingReceipts(false);
         });
 
         return () => unsubscribe();
-    }, [user, firestore, receiptLimit]);
+    }, [user, firestore, companyId, receiptLimit]);
 
     // 2. Fetch Unit IDs & Owners (for dropdown & bill to)
     useEffect(() => {
@@ -338,14 +343,14 @@ export default function AnalyzeDocsPage() {
                     setAvailableUnitIds(['101', '102', '103']); // Fallback
                 }
 
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Error fetching units/owners:", e);
-                // Fallback or empty
+                setUnitsLoadError(e?.message || "Failed to load unit IDs.");
                 if (availableUnitIds.length === 0) setAvailableUnitIds(['101', '102', '103']);
             }
         };
         fetchData();
-    }, [user, firestore]);
+    }, [user, firestore, companyId]);
 
 
     // -- Handlers --
@@ -450,17 +455,29 @@ export default function AnalyzeDocsPage() {
 
                 // 3. Save
                 if (user && firestore && extractedReceipts.length > 0) {
-                    // Start batch for atomic writes (optional per receipt, but here acts per file)
+                    const driversSnap = await getDocs(collection(firestore, `companies/${companyId}/drivers`));
+                    const ownersSnap = await getDocs(collection(firestore, `companies/${companyId}/owners`));
+                    const unitToOwner = new Map<string, { id: string; name: string }>();
+                    const unitToDriver = new Map<string, { id: string; firstName: string; lastName: string }>();
+                    ownersSnap.docs.forEach((d) => {
+                        const data = d.data();
+                        const uid = data.unitId != null ? String(data.unitId).trim() : '';
+                        if (uid) unitToOwner.set(uid, { id: d.id, name: data.name || '' });
+                    });
+                    driversSnap.docs.forEach((d) => {
+                        const data = d.data();
+                        const uid = data.unitId != null ? String(data.unitId).trim() : '';
+                        if (uid) unitToDriver.set(uid, { id: d.id, firstName: data.firstName || '', lastName: data.lastName || '' });
+                    });
+
                     for (const receipt of extractedReceipts) {
 
                         // 0. Override Unit ID from Filename if present (per user request)
-                        // Look for exactly 4 digits surrounding by non-digits
                         const filenameMatch = file.name.match(/(?:^|\D)(\d{4})(?:\D|$)/);
                         if (filenameMatch) {
                             receipt.unit_id = filenameMatch[1];
                         }
 
-                        // Lookup Owner/Driver if Unit ID exists
                         let expenseOwner = null;
                         let expenseType: 'company' | 'driver' | 'owner' = 'company';
                         let matchedDriverId = null;
@@ -468,35 +485,17 @@ export default function AnalyzeDocsPage() {
 
                         if (receipt.unit_id) {
                             const cleanUnitId = receipt.unit_id.trim();
-
-                            // 1. Check Owners
-                            const qOwner = query(
-                                collection(firestore, `companies/${companyId}/owners`),
-                                where("unitId", "==", cleanUnitId),
-                                limit(1)
-                            );
-                            const snapOwner = await getDocs(qOwner);
-                            if (!snapOwner.empty) {
-                                expenseOwner = snapOwner.docs[0].data().name;
-                                matchedOwnerId = snapOwner.docs[0].id;
+                            const owner = unitToOwner.get(cleanUnitId);
+                            const driver = unitToDriver.get(cleanUnitId);
+                            if (owner) {
+                                matchedOwnerId = owner.id;
+                                expenseOwner = owner.name;
                                 expenseType = 'owner';
                             }
-
-                            // 2. Check Drivers
-                            const qDriver = query(
-                                collection(firestore, `companies/${companyId}/drivers`),
-                                where("unitId", "==", cleanUnitId),
-                                limit(1)
-                            );
-                            const snapDriver = await getDocs(qDriver);
-                            if (!snapDriver.empty) {
-                                matchedDriverId = snapDriver.docs[0].id;
-                                // Only switch to driver billing if NO owner exists
-                                if (!matchedOwnerId) {
-                                    const driverData = snapDriver.docs[0].data();
-                                    expenseOwner = `${driverData.firstName} ${driverData.lastName}`;
-                                    expenseType = 'driver';
-                                }
+                            if (driver && !matchedOwnerId) {
+                                matchedDriverId = driver.id;
+                                expenseOwner = `${driver.firstName} ${driver.lastName}`.trim() || null;
+                                expenseType = 'driver';
                             }
                         }
 
@@ -629,6 +628,23 @@ export default function AnalyzeDocsPage() {
                     Upload receipts and documents for AI analysis.
                 </p>
             </div>
+
+            {(unitsLoadError || receiptsLoadError) && (
+                <div className="space-y-2">
+                    {unitsLoadError && (
+                        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center justify-between">
+                            <span>{unitsLoadError}</span>
+                            <Button variant="ghost" size="sm" onClick={() => setUnitsLoadError(null)}>Dismiss</Button>
+                        </div>
+                    )}
+                    {receiptsLoadError && (
+                        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center justify-between">
+                            <span>{receiptsLoadError}</span>
+                            <Button variant="ghost" size="sm" onClick={() => setReceiptsLoadError(null)}>Dismiss</Button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left Column: Upload & Saved Receipts */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
+import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect, useRef } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
@@ -89,58 +89,52 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     company: null,
   });
 
+  const unsubRef = useRef<{ user?: () => void; company?: () => void }>({});
+
   // Effect to subscribe to Firebase auth state changes
   useEffect(() => {
-    if (!auth || !firestore) { // If no Auth/Firestore service instance, cannot determine user state
+    if (!auth || !firestore) {
       setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth/Firestore service not provided."), companyId: null, companyName: null, company: null });
       return;
     }
 
-    setUserAuthState(prev => ({ ...prev, isUserLoading: true, userError: null })); // Reset on auth instance change
-
-    let unsubscribeUser: () => void;
-    let unsubscribeCompany: () => void;
+    setUserAuthState(prev => ({ ...prev, isUserLoading: true, userError: null }));
 
     const unsubscribeAuth = onAuthStateChanged(
       auth,
       (firebaseUser) => {
-        if (unsubscribeUser) unsubscribeUser();
-        if (unsubscribeCompany) unsubscribeCompany();
+        unsubRef.current.user?.();
+        unsubRef.current.company?.();
+        unsubRef.current = {};
 
         if (firebaseUser) {
           const userDocRef = doc(firestore, 'users', firebaseUser.uid);
 
-          unsubscribeUser = onSnapshot(userDocRef, (userDoc) => {
+          unsubRef.current.user = onSnapshot(userDocRef, (userDoc) => {
             const companyId = userDoc.exists() ? userDoc.data()?.companyId || null : null;
 
             if (companyId) {
               const compDocRef = doc(firestore, 'companies', companyId);
 
-              if (unsubscribeCompany) unsubscribeCompany();
-
-              unsubscribeCompany = onSnapshot(compDocRef, (compDoc) => {
+              unsubRef.current.company = onSnapshot(compDocRef, (compDoc) => {
                 let companyName = null;
                 let company = null;
-
                 if (compDoc.exists()) {
                   companyName = compDoc.data()?.name || null;
                   company = { id: compDoc.id, ...compDoc.data() };
                 }
-
                 setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null, companyId, companyName, company });
               }, (err) => {
                 console.error("Error fetching company profile:", err);
                 setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: err, companyId, companyName: null, company: null });
               });
             } else {
-              if (unsubscribeCompany) { unsubscribeCompany(); }
               setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null, companyId: null, companyName: null, company: null });
             }
           }, (err) => {
             console.error("Error fetching user profile:", err);
             setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: err, companyId: null, companyName: null, company: null });
           });
-
         } else {
           setUserAuthState({ user: null, isUserLoading: false, userError: null, companyId: null, companyName: null, company: null });
         }
@@ -153,10 +147,11 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeUser) unsubscribeUser();
-      if (unsubscribeCompany) unsubscribeCompany();
+      unsubRef.current.user?.();
+      unsubRef.current.company?.();
+      unsubRef.current = {};
     };
-  }, [auth, firestore]); // Depends on the auth and firestore instances
+  }, [auth, firestore]);
 
   // Memoize the context value
   const contextValue = useMemo((): FirebaseContextState => {

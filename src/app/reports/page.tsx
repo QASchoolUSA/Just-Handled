@@ -15,7 +15,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
-import { collection, query, where } from "firebase/firestore";
+import { collection, query, where, limit } from "firebase/firestore";
 import type { Load, Expense, Driver, Owner, AccountSettings } from "@/lib/types";
 import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import useLocalStorage from "@/hooks/use-local-storage";
@@ -83,7 +83,7 @@ export default function ReportsPage() {
                 where('deliveryDate', '<=', toStr)
             );
         }
-        return collection(firestore, `companies/${companyId}/loads`);
+        return query(collection(firestore, `companies/${companyId}/loads`), limit(5000));
     }, [firestore, companyId, fromStr, toStr]);
 
     const expensesQuery = useMemoFirebase(() => {
@@ -95,7 +95,7 @@ export default function ReportsPage() {
                 where('date', '<=', toStr + 'T23:59:59.999Z')
             );
         }
-        return collection(firestore, `companies/${companyId}/expenses`);
+        return query(collection(firestore, `companies/${companyId}/expenses`), limit(5000));
     }, [firestore, companyId, fromStr, toStr]);
 
     // Drivers & Owners (Fetch all)

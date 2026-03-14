@@ -4,9 +4,10 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase/provider';
 import { Loader2, Truck } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-    const { user, isUserLoading } = useUser();
+    const { user, isUserLoading, userError } = useUser();
     const router = useRouter();
 
     React.useEffect(() => {
@@ -14,6 +15,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             router.push('/login');
         }
     }, [user, isUserLoading, router]);
+
+    if (!isUserLoading && userError) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-md p-4">
+                <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-6 max-w-md text-center space-y-4">
+                    <p className="text-sm font-medium text-destructive">Could not load your account.</p>
+                    <p className="text-xs text-muted-foreground">{userError.message}</p>
+                    <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Retry</Button>
+                </div>
+            </div>
+        );
+    }
 
     if (isUserLoading) {
         return (

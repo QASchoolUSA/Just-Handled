@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
-import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimestamp, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimestamp, onSnapshot, orderBy, limit } from "firebase/firestore";
 import type { Load } from "@/lib/types";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { parseUploadedFile } from "@/lib/onboarding/parse-file";
@@ -91,7 +91,8 @@ export default function FactoringPage() {
 
         const q = query(
             collection(firestore, `companies/${companyId}/factoringUploads`),
-            orderBy('createdAt', 'desc')
+            orderBy('createdAt', 'desc'),
+            limit(100)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {

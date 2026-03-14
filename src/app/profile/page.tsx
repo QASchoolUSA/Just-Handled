@@ -29,6 +29,7 @@ export default function ProfilePage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(formSchema),
@@ -56,8 +57,9 @@ export default function ProfilePage() {
               form.setValue('phoneNumber', data.phoneNumber);
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error fetching user data:", error);
+          setFetchError(error?.message || "Failed to load profile data.");
         }
       };
 
@@ -116,6 +118,12 @@ export default function ProfilePage() {
 
   return (
     <div className="container mx-auto py-6 max-w-2xl">
+      {fetchError && (
+        <div className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {fetchError}
+          <button type="button" className="ml-2 underline" onClick={() => setFetchError(null)} aria-label="Dismiss">Dismiss</button>
+        </div>
+      )}
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
         <p className="text-muted-foreground">Manage your account information.</p>
