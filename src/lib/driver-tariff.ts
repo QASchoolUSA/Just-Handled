@@ -21,12 +21,13 @@ export function parseDriverTariff(value: unknown): DriverPayParsed {
     }
   }
 
-  // CPM: ".60 cpm", "0.60 cpm", "60 cpm"
+  // CPM: ".60 cpm", "0.60 cpm", "60 cpm" (60 = 60 cents = 0.60 dollars per mile)
   const cpmMatch = lower.match(/(\d+(?:\.\d+)?)\s*cpm/) ?? lower.match(/(\.\d+)\s*cpm/);
   if (cpmMatch) {
     const num = parseFloat(cpmMatch[1]);
     if (!Number.isNaN(num) && num >= 0) {
-      return { payType: 'cpm', rate: num };
+      const rate = num >= 1 ? num / 100 : num;
+      return { payType: 'cpm', rate };
     }
   }
 

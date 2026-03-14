@@ -342,6 +342,7 @@ export default function DriversPage() {
           const payTypeRaw = String(payTypeCol).toLowerCase();
           payType = payTypeRaw.includes('cpm') ? 'cpm' : 'percentage';
           rate = parseFloat(String(rateCol)) || 0;
+          if (payType === 'cpm' && rate >= 1) rate = rate / 100;
         } else {
           const parsed = parseDriverTariff(tariffCol);
           if (parsed) {

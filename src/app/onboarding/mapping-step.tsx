@@ -90,40 +90,6 @@ export function OnboardingMappingStep({
         </div>
       </section>
 
-      <section className="rounded-xl border bg-muted/10 overflow-hidden">
-        <div className="px-4 py-3 border-b bg-muted/20">
-          <p className="text-sm font-medium text-foreground">
-            Preview · {normalized.length.toLocaleString()} row{normalized.length !== 1 ? 's' : ''} will be imported
-          </p>
-        </div>
-        {normalized.length > 0 && (
-          <div className="overflow-x-auto max-h-44 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/30 sticky top-0">
-                <tr>
-                  <th className="text-left p-3 font-medium">Load #</th>
-                  <th className="text-left p-3 font-medium">Driver</th>
-                  <th className="text-left p-3 font-medium">Pickup</th>
-                  <th className="text-left p-3 font-medium">Delivery</th>
-                  <th className="text-right p-3 font-medium">Pay</th>
-                </tr>
-              </thead>
-              <tbody>
-                {normalized.slice(0, 5).map((row, i) => (
-                  <tr key={i} className="border-t border-border/50 hover:bg-muted/10">
-                    <td className="p-3">{row.loadNumber}</td>
-                    <td className="p-3">{row.driverName}</td>
-                    <td className="p-3">{row.pickupDate}</td>
-                    <td className="p-3">{row.deliveryDate}</td>
-                    <td className="p-3 text-right">{row.invoiceAmount ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
       <div className="flex flex-wrap gap-3 pt-1">
         <Button variant="outline" onClick={onBack} className="min-w-[100px]">
           <ArrowLeft className="mr-2 h-4 w-4" />
