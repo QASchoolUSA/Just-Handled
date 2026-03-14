@@ -454,16 +454,14 @@ export default function DriversPage() {
 
   const chartGrossData = useMemo(() => {
     return [...driverEarnings].sort((a, b) => b.grossPay - a.grossPay).slice(0, 12).map(r => ({
-      name: r.driverName.length > 14 ? r.driverName.slice(0, 12) + '…' : r.driverName,
-      fullName: r.driverName,
+      name: r.driverName,
       grossPay: Math.round(r.grossPay * 100) / 100,
     }));
   }, [driverEarnings]);
 
   const chartLoadsData = useMemo(() => {
     return [...driverEarnings].sort((a, b) => b.loadCount - a.loadCount).slice(0, 12).map(r => ({
-      name: r.driverName.length > 14 ? r.driverName.slice(0, 12) + '…' : r.driverName,
-      fullName: r.driverName,
+      name: r.driverName,
       loads: r.loadCount,
     }));
   }, [driverEarnings]);
@@ -786,10 +784,18 @@ export default function DriversPage() {
                     <CardTitle className="text-sm font-medium text-muted-foreground">Gross pay by driver (top 12)</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ChartContainer config={grossPayChartConfig} className="h-[280px] w-full">
-                      <BarChart data={chartGrossData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                    <ChartContainer config={grossPayChartConfig} className="h-[340px] w-full min-w-0">
+                      <BarChart data={chartGrossData} layout="vertical" margin={{ left: 4, right: 24 }}>
                         <XAxis type="number" tickFormatter={(v: unknown) => formatCurrency(Number(v))} />
-                        <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={200}
+                          tick={{ fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                          interval={0}
+                        />
                         <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
                         <Bar dataKey="grossPay" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} />
                       </BarChart>
@@ -801,10 +807,18 @@ export default function DriversPage() {
                     <CardTitle className="text-sm font-medium text-muted-foreground">Loads by driver (top 12)</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ChartContainer config={loadsChartConfig} className="h-[280px] w-full">
-                      <BarChart data={chartLoadsData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                    <ChartContainer config={loadsChartConfig} className="h-[340px] w-full min-w-0">
+                      <BarChart data={chartLoadsData} layout="vertical" margin={{ left: 4, right: 24 }}>
                         <XAxis type="number" />
-                        <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={200}
+                          tick={{ fontSize: 12 }}
+                          tickLine={false}
+                          axisLine={false}
+                          interval={0}
+                        />
                         <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                         <Bar dataKey="loads" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
                       </BarChart>
