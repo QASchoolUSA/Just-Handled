@@ -13,6 +13,9 @@ export const ONBOARDING_SYSTEM_FIELDS = [
   'invoiceAmount',
   'totalPay',
   'miles',
+  'driverPayType',
+  'driverRate',
+  'driverTariff',
 ] as const;
 
 export type OnboardingSystemField = (typeof ONBOARDING_SYSTEM_FIELDS)[number];
@@ -31,6 +34,9 @@ export const SYSTEM_FIELD_LABELS: Record<OnboardingSystemField, string> = {
   invoiceAmount: 'Load Pay / Gross Pay',
   totalPay: 'Total Pay',
   miles: 'Total Miles',
+  driverPayType: 'Driver Pay Type (percentage/cpm)',
+  driverRate: 'Driver Rate',
+  driverTariff: 'Driver Tariff (e.g. .60 cpm or 30% from gross)',
 };
 
 /** Required system fields for import to proceed. */
@@ -64,4 +70,8 @@ export type NormalizedRow = {
   invoiceAmount?: number;
   totalPay?: number;
   miles?: number;
+  /** Driver pay type from file (optional; used when re-importing or file has pay columns). */
+  payType?: 'percentage' | 'cpm';
+  /** Driver rate from file (optional). */
+  rate?: number;
 };

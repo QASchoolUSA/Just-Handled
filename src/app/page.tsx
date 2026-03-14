@@ -8,6 +8,19 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { DollarSign, BarChart, TrendingUp, TrendingDown, Users, AlertTriangle, Route, CalendarIcon, Receipt } from 'lucide-react';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import {
+  groupByPeriod,
+  getPeriodKeysFromRange,
+  buildChartDataFromBuckets,
+  type PeriodBucket,
+} from '@/lib/charts/aggregate-by-period';
 import type { Load, Driver, Expense } from '@/lib/types';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -114,7 +127,7 @@ export default function DashboardPage() {
     if (!loads) return [];
     return loads.filter(load => {
       try {
-        const loadDate = parseDateAny(load.pickupDate);
+        const loadDate = parseDateAny(load.deliveryDate);
         return isWithinInterval(loadDate, dateRange);
       } catch {
         return false;
@@ -207,6 +220,55 @@ export default function DashboardPage() {
       averageRpm
     };
   }, [filteredLoads, drivers, filteredExpenses]);
+
+  const periodBucket: PeriodBucket = selectedPeriod === '7d' || selectedPeriod === '30d' ? 'week' : 'month';
+  const chartData = useMemo(() => {
+    if (!filteredLoads?.length || !drivers) return [];
+    const driverMap = new Map(drivers.map((d) => [d.id, d]));
+    const periodKeys = getPeriodKeysFromRange(dateRange.start, dateRange.end, periodBucket);
+    const baseRows = buildChartDataFromBuckets(periodKeys, periodBucket);
+    const loadsByPeriod = groupByPeriod(filteredLoads, (l) => l.deliveryDate || l.pickupDate || '', periodBucket);
+    const expensesByPeriod = groupByPeriod(filteredExpenses ?? [], (e) => e.date ?? '', periodBucket);
+
+    return baseRows.map((row) => {
+      const periodLoads = loadsByPeriod.get(row.period) ?? [];
+      const periodExpenses = expensesByPeriod.get(row.period) ?? [];
+      const revenue = periodLoads.reduce((s, l) => s + safeParseNumber(l.invoiceAmount), 0);
+      const factoring = periodLoads.reduce((s, l) => s + safeParseNumber(l.factoringFee), 0);
+      let driverPay = 0;
+      let advances = 0;
+      periodLoads.forEach((load) => {
+        advances += safeParseNumber(load.advance);
+        const driver = driverMap.get(load.driverId);
+        if (driver?.payType != null && driver?.rate != null) {
+          const amt = safeParseNumber(load.invoiceAmount);
+          const miles = safeParseNumber(load.miles);
+          const rate = safeParseNumber(driver.rate);
+          if (driver.payType === 'percentage') driverPay += amt * rate;
+          else if (driver.payType === 'cpm' && miles > 0) driverPay += miles * rate;
+        }
+      });
+      const companyExpenses = periodExpenses
+        .filter((e) => e.type === 'company')
+        .reduce((s, e) => s + safeParseNumber(e.amount), 0);
+      const netProfit = revenue - (driverPay + advances) - factoring - companyExpenses;
+      return {
+        ...row,
+        revenue: Math.round(revenue * 100) / 100,
+        netProfit: Math.round(netProfit * 100) / 100,
+      };
+    });
+  }, [filteredLoads, filteredExpenses, drivers, dateRange, periodBucket]);
+
+  const revenueChartConfig = {
+    periodLabel: { label: 'Period' },
+    revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
+  } satisfies ChartConfig;
+
+  const profitChartConfig = {
+    periodLabel: { label: 'Period' },
+    netProfit: { label: 'Net Profit', color: 'hsl(var(--chart-2))' },
+  } satisfies ChartConfig;
 
   const isLoading = loadsLoading || driversLoading || expensesLoading;
 
@@ -381,6 +443,43 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {chartData.length > 0 && (
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Revenue over time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={revenueChartConfig} className="h-[240px] w-full">
+                <AreaChart data={chartData} margin={{ left: 12, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} tickFormatter={(v: unknown) => `$${Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : Number(v)}`} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                  <Area type="monotone" dataKey="revenue" stroke="hsl(var(--chart-1))" fill="hsl(var(--chart-1))" fillOpacity={0.3} />
+                </AreaChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Net profit over time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={profitChartConfig} className="h-[240px] w-full">
+                <LineChart data={chartData} margin={{ left: 12, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} tickFormatter={(v: unknown) => `$${Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : Number(v)}`} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                  <Line type="monotone" dataKey="netProfit" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="lg:col-span-2">

@@ -40,6 +40,12 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 
 import { GroupedOwnerSettlement } from '@/components/grouped-owner-settlement';
 import type { ImportError, ImportResult } from '@/lib/types';
+import { parseUploadedFile } from '@/lib/onboarding/parse-file';
+import type { ParsedFile } from '@/lib/onboarding/types';
+import { getMappedCell } from '@/lib/import-mapping';
+import type { ColumnMapping } from '@/lib/import-mapping';
+import { SETTLEMENTS_LOAD_IMPORT_CONFIG, SETTLEMENTS_EXPENSE_IMPORT_CONFIG } from '@/lib/import-configs';
+import { ImportWithMappingDialog } from '@/components/import-with-mapping-dialog';
 
 // --- Helper Functions ---
 
@@ -122,8 +128,8 @@ export default function SettlementsPage() {
     if (!loadsCollectionRef) return null;
     return query(
       loadsCollectionRef,
-      where('pickupDate', '>=', weekStartStr),
-      where('pickupDate', '<=', weekEndStr)
+      where('deliveryDate', '>=', weekStartStr),
+      where('deliveryDate', '<=', weekEndStr)
     );
   }, [loadsCollectionRef, weekStartStr, weekEndStr]);
 
@@ -174,8 +180,8 @@ export default function SettlementsPage() {
 
       if (!snapshot.empty) {
         const load = snapshot.docs[0].data() as Load;
-        const pickupDate = parseDateHelper(load.pickupDate);
-        setSelectedWeek(startOfWeek(pickupDate, { weekStartsOn: 1 }));
+        const deliveryDate = parseDateHelper(load.deliveryDate);
+        setSelectedWeek(startOfWeek(deliveryDate, { weekStartsOn: 1 }));
         setActiveTab('loads');
       } else {
         alert(`Load #${searchQuery.trim()} not found in any period.`);
@@ -226,8 +232,8 @@ export default function SettlementsPage() {
 
     return loads
       .filter(load => {
-        // Date Filter: pickupDate must be within selected week
-        const loadDate = parseDateHelper(load.pickupDate);
+        // Date Filter: deliveryDate must be within selected week
+        const loadDate = parseDateHelper(load.deliveryDate);
         if (!isWithinInterval(loadDate, weekInterval)) return false;
 
         // Search Query Filter
@@ -289,6 +295,10 @@ export default function SettlementsPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [loadImportParsed, setLoadImportParsed] = useState<ParsedFile | null>(null);
+  const [loadMappingDialogOpen, setLoadMappingDialogOpen] = useState(false);
+  const [expenseImportParsed, setExpenseImportParsed] = useState<ParsedFile | null>(null);
+  const [expenseMappingDialogOpen, setExpenseMappingDialogOpen] = useState(false);
 
 
 
@@ -538,162 +548,139 @@ export default function SettlementsPage() {
   const handleImportLoads = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        if (results.data && firestore && loadsCollectionRef && drivers) {
-          const importedLoads = results.data as any[];
-          let successCount = 0;
-          let skippedCount = 0;
-          const errors: ImportError[] = [];
-          const skipped: Array<{ row: number; loadNumber: string }> = [];
-
-          // Get existing load numbers for duplicate detection.
-          // IMPORTANT: `loads` is week-filtered in this page, so it can't be trusted for global dedupe.
-          // We query Firestore for loadNumbers present in the import file to prevent duplicates across all time.
-          const existingLoadNumbers = new Set<string>();
-          const importLoadNumbers = Array.from(
-            new Set(
-              importedLoads
-                .map((r) => (r?.['Load #'] ?? '').toString().trim())
-                .filter(Boolean)
-            )
-          );
-
-          try {
-            // Firestore 'in' supports up to 30 values.
-            for (let i = 0; i < importLoadNumbers.length; i += 30) {
-              const chunk = importLoadNumbers.slice(i, i + 30);
-              if (chunk.length === 0) continue;
-              const qExisting = query(loadsCollectionRef, where('loadNumber', 'in', chunk));
-              const snapExisting = await getDocs(qExisting);
-              snapExisting.forEach((d) => {
-                const ln = (d.data() as any)?.loadNumber;
-                if (ln) existingLoadNumbers.add(String(ln).trim());
-              });
-            }
-          } catch (err) {
-            console.error('Duplicate pre-check failed (continuing with best-effort dedupe).', err);
-            // Fallback: include currently loaded loads (week-scoped) so at least we avoid duplicates in-view.
-            (loads || []).forEach((l) => existingLoadNumbers.add(String(l.loadNumber).trim()));
-          }
-
-          for (let i = 0; i < importedLoads.length; i++) {
-            const row = importedLoads[i];
-            const rowNumber = i + 2; // +1 for 0-index, +1 for header row
-
-            if (!row['Load #'] || !row['Driver Name']) {
-              // specific check or just skip? Let's skip empty rows silently or add error if it looks like data
-              if (Object.values(row).some(v => !!v)) {
-                errors.push({ row: rowNumber, data: row, reason: 'Missing Load # or Driver Name' });
-              }
-              continue;
-            }
-
-            // Check for duplicates
-            const loadNumber = row['Load #'].toString().trim();
-            if (existingLoadNumbers.has(loadNumber)) {
-              console.log(`Skipping duplicate load: ${loadNumber}`);
-              skipped.push({ row: rowNumber, loadNumber });
-              skippedCount++;
-              continue;
-            }
-
-            // Normalize the driver name from CSV
-            const csvDriverName = String(row['Driver Name']).toLowerCase().trim();
-
-            // Find driver with flexible matching
-            const driver = drivers.find(d => {
-              const dbDriverName = `${d.firstName} ${d.lastName}`.toLowerCase().trim();
-              return dbDriverName === csvDriverName;
-            });
-
-            if (!driver) {
-              // Log available drivers for debugging
-              console.warn(`Driver not found for: "${row['Driver Name']}"`);
-              console.warn('Available drivers:', drivers.map(d => `${d.firstName} ${d.lastName}`));
-
-              errors.push({
-                row: rowNumber,
-                data: row,
-                reason: `Driver not found: "${row['Driver Name']}". Check spelling and format (e.g., "John Doe").`
-              });
-              continue;
-            }
-
-            console.log(`Matched driver: "${row['Driver Name']}" -> ${driver.firstName} ${driver.lastName}`);
-
-            // Auto-update driver's Unit ID if it changed
-            const loadTruckId = row['Truck ID']?.trim();
-            if (loadTruckId && driver.unitId !== loadTruckId) {
-              console.log(`Updating ${driver.firstName} ${driver.lastName}'s Unit ID: "${driver.unitId}" -> "${loadTruckId}"`);
-              const driverDoc = doc(firestore, `companies/${companyId}/drivers`, driver.id);
-              await setDocumentNonBlocking(driverDoc, { unitId: loadTruckId }, { merge: true });
-              // Update local driver object for subsequent loads in same import
-              driver.unitId = loadTruckId;
-            }
-
-            // Helper to parse numbers that might have currency symbols, commas, etc.
-            // Helper to parse numbers that might have currency symbols, commas, etc.
-            // Uses shared parseNumber from utils
-
-            const newLoad = {
-              loadNumber: row['Load #'],
-              driverId: driver.id,
-
-              pickupDate: normalizeDateFormat(row['Pickup Date']),
-              deliveryDate: normalizeDateFormat(row['Delivery Date']),
-              brokerId: row['Broker ID'] || '',
-              invoiceId: row['Invoice ID'] || '',
-              trailerNumber: row['Trailer Number'] || '',
-              truckId: row['Truck ID'] || '',
-
-              miles: parseNumber(row['Miles']),
-              emptyMiles: parseNumber(row['Empty Miles']),
-              pickupLocation: row['Pickup Location'] || '',
-              deliveryLocation: row['Delivery Location'] || '',
-
-              invoiceAmount: parseNumber(row['Invoice Amount']),
-              reserveAmount: parseNumber(row['Reserve Amount']),
-              primeRateSurcharge: parseNumber(row['Prime Rate Surcharge']),
-              transactionFee: parseNumber(row['Transaction Fee']),
-
-              factoringFee: parseNumber(row['Factoring Fee']),
-              advance: parseNumber(row['Advance']),
-
-              extraStops: parseNumber(row['Extra Stops']) || 0,
-              extraStopsPay: parseNumber(row['Extra Stops Pay']) || 0,
-
-              proofOfDeliveryUrl: null,
-              rateConfirmationUrl: null,
-            };
-
-            console.log('Importing load:', {
-              loadNumber: newLoad.loadNumber,
-              invoiceAmount: newLoad.invoiceAmount,
-              rawValue: row['Invoice Amount']
-            });
-
-            if (loadsCollectionRef) {
-              await addDocumentNonBlocking(loadsCollectionRef, newLoad);
-            }
-            existingLoadNumbers.add(loadNumber); // Add to set for current import session
-            successCount++;
-          }
-
-          setImportResult({ successCount, errors, skippedCount });
-          setIsImportResultOpen(true);
-
-          if (loadFileInputRef.current) loadFileInputRef.current.value = '';
-        }
-      },
-      error: (error) => {
-        console.error('Error parsing CSV:', error);
-        alert('Error parsing CSV file.');
+    setIsImporting(true);
+    try {
+      const parsed = await parseUploadedFile(file);
+      if (parsed.rows.length === 0) {
+        alert('No data rows found in the file.');
+        return;
       }
-    });
+      setLoadImportParsed(parsed);
+      setLoadMappingDialogOpen(true);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to parse file.');
+    } finally {
+      setIsImporting(false);
+      if (loadFileInputRef.current) loadFileInputRef.current.value = '';
+    }
+  };
+
+  const runLoadImportWithMapping = async (mapping: ColumnMapping) => {
+    if (!loadImportParsed || !firestore || !loadsCollectionRef || !drivers) return;
+    const { headers, rows } = loadImportParsed;
+    const get = (row: Record<string, unknown>, fieldId: string) =>
+      getMappedCell(row, fieldId, mapping, headers);
+    const str = (v: unknown) => (v != null ? String(v).trim() : '');
+    const importedLoads = rows.map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        'Load #': get(r, 'loadNumber'),
+        'Driver Name': get(r, 'driverName'),
+        'Pickup Date': get(r, 'pickupDate'),
+        'Delivery Date': get(r, 'deliveryDate'),
+        'Truck ID': get(r, 'truckId'),
+        'Trailer Number': get(r, 'trailerNumber'),
+        'Pickup Location': get(r, 'pickupLocation'),
+        'Delivery Location': get(r, 'deliveryLocation'),
+        'Miles': get(r, 'miles'),
+        'Empty Miles': get(r, 'emptyMiles'),
+        'Invoice Amount': get(r, 'invoiceAmount'),
+        'Reserve Amount': get(r, 'reserveAmount'),
+        'Prime Rate Surcharge': get(r, 'primeRateSurcharge'),
+        'Transaction Fee': get(r, 'transactionFee'),
+        'Factoring Fee': get(r, 'factoringFee'),
+        'Advance': get(r, 'advance'),
+        'Extra Stops': get(r, 'extraStops'),
+        'Extra Stops Pay': get(r, 'extraStopsPay'),
+        'Broker ID': get(r, 'brokerId'),
+        'Invoice ID': get(r, 'invoiceId'),
+      };
+    }) as any[];
+
+    let successCount = 0;
+    let skippedCount = 0;
+    const errors: ImportError[] = [];
+    const existingLoadNumbers = new Set<string>();
+    const importLoadNumbers = Array.from(
+      new Set(importedLoads.map((r) => str(r?.['Load #']).trim()).filter(Boolean))
+    );
+    try {
+      for (let i = 0; i < importLoadNumbers.length; i += 30) {
+        const chunk = importLoadNumbers.slice(i, i + 30);
+        if (chunk.length === 0) continue;
+        const qExisting = query(loadsCollectionRef, where('loadNumber', 'in', chunk));
+        const snapExisting = await getDocs(qExisting);
+        snapExisting.forEach((d) => {
+          const ln = (d.data() as any)?.loadNumber;
+          if (ln) existingLoadNumbers.add(String(ln).trim());
+        });
+      }
+    } catch (err) {
+      console.error('Duplicate pre-check failed.', err);
+      (loads || []).forEach((l) => existingLoadNumbers.add(String(l.loadNumber).trim()));
+    }
+
+    for (let i = 0; i < importedLoads.length; i++) {
+      const row = importedLoads[i];
+      const rowNumber = i + 2;
+      if (!str(row['Load #']) || !str(row['Driver Name'])) {
+        if (Object.values(row).some((v) => v != null && str(v))) {
+          errors.push({ row: rowNumber, data: row, reason: 'Missing Load # or Driver Name' });
+        }
+        continue;
+      }
+      const loadNumber = str(row['Load #']);
+      if (existingLoadNumbers.has(loadNumber)) {
+        skippedCount++;
+        continue;
+      }
+      const csvDriverName = str(row['Driver Name']).toLowerCase();
+      const driver = drivers.find((d) => `${d.firstName} ${d.lastName}`.toLowerCase().trim() === csvDriverName);
+      if (!driver) {
+        errors.push({
+          row: rowNumber,
+          data: row,
+          reason: `Driver not found: "${row['Driver Name']}". Check spelling and format (e.g., "John Doe").`,
+        });
+        continue;
+      }
+      const loadTruckId = str(row['Truck ID']);
+      if (loadTruckId && driver.unitId !== loadTruckId) {
+        const driverDoc = doc(firestore, `companies/${companyId}/drivers`, driver.id);
+        await setDocumentNonBlocking(driverDoc, { unitId: loadTruckId }, { merge: true });
+        driver.unitId = loadTruckId;
+      }
+      const newLoad = {
+        loadNumber: row['Load #'],
+        driverId: driver.id,
+        pickupDate: normalizeDateFormat(str(row['Pickup Date'])),
+        deliveryDate: normalizeDateFormat(str(row['Delivery Date'])),
+        brokerId: str(row['Broker ID']),
+        invoiceId: str(row['Invoice ID']),
+        trailerNumber: str(row['Trailer Number']),
+        truckId: str(row['Truck ID']),
+        miles: parseNumber(row['Miles']),
+        emptyMiles: parseNumber(row['Empty Miles']),
+        pickupLocation: str(row['Pickup Location']),
+        deliveryLocation: str(row['Delivery Location']),
+        invoiceAmount: parseNumber(row['Invoice Amount']),
+        reserveAmount: parseNumber(row['Reserve Amount']),
+        primeRateSurcharge: parseNumber(row['Prime Rate Surcharge']),
+        transactionFee: parseNumber(row['Transaction Fee']),
+        factoringFee: parseNumber(row['Factoring Fee']),
+        advance: parseNumber(row['Advance']),
+        extraStops: parseNumber(row['Extra Stops']) || 0,
+        extraStopsPay: parseNumber(row['Extra Stops Pay']) || 0,
+        proofOfDeliveryUrl: null,
+        rateConfirmationUrl: null,
+      };
+      await addDocumentNonBlocking(loadsCollectionRef, newLoad);
+      existingLoadNumbers.add(loadNumber);
+      successCount++;
+    }
+    setImportResult({ successCount, errors, skippedCount });
+    setIsImportResultOpen(true);
+    setLoadImportParsed(null);
   };
 
   const handleGenerateExpenseTemplate = () => {
@@ -717,166 +704,132 @@ export default function SettlementsPage() {
     expenseFileInputRef.current?.click();
   };
 
-  const handleImportExpenses = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExpenses = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setIsImporting(true);
+    try {
+      const parsed = await parseUploadedFile(file);
+      if (parsed.rows.length === 0) {
+        alert('No data rows found in the file.');
+        return;
+      }
+      setExpenseImportParsed(parsed);
+      setExpenseMappingDialogOpen(true);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to parse file.');
+    } finally {
+      setIsImporting(false);
+      if (expenseFileInputRef.current) expenseFileInputRef.current.value = '';
+    }
+  };
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        if (results.data && firestore && expensesCollectionRef && drivers && owners && expenses) {
-          const importedExpenses = results.data as any[];
-          let successCount = 0;
-          let skippedCount = 0;
-          const errors: ImportError[] = [];
+  const runExpenseImportWithMapping = async (mapping: ColumnMapping) => {
+    if (!expenseImportParsed || !firestore || !expensesCollectionRef || !drivers || !owners || !expenses) return;
+    const { headers, rows } = expenseImportParsed;
+    const get = (row: Record<string, unknown>, fieldId: string) =>
+      getMappedCell(row, fieldId, mapping, headers);
+    const str = (v: unknown) => (v != null ? String(v).trim() : '');
+    const importedExpenses = rows.map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        'Date': get(r, 'date'),
+        'Description': get(r, 'description'),
+        'Unit ID': get(r, 'unitId'),
+        'Amount': get(r, 'amount'),
+        'Gallons': get(r, 'gallons'),
+        'State': get(r, 'state'),
+        'Bill To (D/O/C)': get(r, 'billTo'),
+        'Expense Type': get(r, 'expenseType'),
+      };
+    }) as any[];
 
-          const existingSignatures = new Set<string>();
-
-          // 1. Determine Date Range from Import Data
-          let minDateStr = '';
-          let maxDateStr = '';
-
-          importedExpenses.forEach((row: any) => {
-            if (row['Date']) {
-              const d = normalizeDateFormat(row['Date']);
-              if (!minDateStr || d < minDateStr) minDateStr = d;
-              if (!maxDateStr || d > maxDateStr) maxDateStr = d;
-            }
-          });
-
-          // 2. Fetch Existing Expenses within that Range (if valid)
-          if (minDateStr && maxDateStr && expensesCollectionRef) {
-            try {
-              const q = query(expensesCollectionRef,
-                where('date', '>=', minDateStr),
-                where('date', '<=', maxDateStr)
-              );
-              const snapshot = await getDocs(q);
-              snapshot.forEach(doc => {
-                const e = doc.data() as Expense;
-                // Normalize logic matches the check logic
-                const sig = `${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`;
-                existingSignatures.add(sig);
-              });
-            } catch (err) {
-              console.error("Error checking for duplicates:", err);
-              // Proceeding without check? Or abort? Better to warn but we proceed with empty set (risk of dups) 
-              // or just rely on current 'expenses' if we merge them.
-            }
-          }
-
-          // Merge currently loaded expenses just in case (though query covers it if range overlaps)
-          expenses.forEach(e => {
-            const sig = `${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`;
-            existingSignatures.add(sig);
-          });
-
-
-
-
-          // Batch variables
-          let batch = writeBatch(firestore);
-          let batchCount = 0;
-
-          for (const row of importedExpenses) {
-            if (!row['Description'] || !row['Amount']) continue;
-
-            const unitId = row['Unit ID']?.trim() || '';
-            const billTo = row['Bill To (D/O/C)']?.trim().toUpperCase() || '';
-
-            const matchedDriver = drivers.find(d => d.unitId === unitId);
-            const matchedOwner = owners.find(o => o.unitId === unitId);
-
-            let type: 'driver' | 'owner' | 'company' = 'company';
-
-            if (billTo === 'D' || billTo === 'DRIVER') {
-              type = 'driver';
-            } else if (billTo === 'O' || billTo === 'OWNER') {
-              type = 'owner';
-            } else if (billTo === 'C' || billTo === 'COMPANY') {
-              type = 'company';
-            } else {
-              // Formatting fallback if Bill To is empty:
-              // If it matches a driver, assume driver (standard legacy behavior)
-              // If not driver but matches owner, assume owner? 
-              // Currently legacy behavior defaults to company if no driver.
-              // Let's favor Driver -> Owner -> Company
-              if (matchedDriver) type = 'driver';
-              else if (matchedOwner) type = 'owner';
-              else type = 'company';
-            }
-
-            const driverId = (type === 'driver' && matchedDriver) ? matchedDriver.id : null;
-            const ownerId = (type === 'owner' && matchedOwner) ? matchedOwner.id : null;
-
-            const gallons = parseFloat(row['Gallons']) || 0;
-            const locationState = row['State']?.trim().toUpperCase() || '';
-            const expenseCategory = row['Expense Type']?.trim() || 'Fuel'; // Default to Fuel if missing? Or logic based on description?
-
-            // Duplicate Check
-            const signature = `${normalizeDateFormat(row['Date'])}|${(parseNumber(row['Amount']) || 0).toFixed(2)}|${row['Description']?.toLowerCase().trim()}|${unitId}`;
-
-            if (existingSignatures.has(signature)) {
-              skippedCount++;
-              continue;
-            }
-
-            const newExpense = {
-              date: normalizeDateFormat(row['Date']),
-              description: row['Description'],
-              amount: parseNumber(row['Amount']) || 0,
-              type,
-              driverId,
-              ownerId,
-              unitId,
-              gallons,
-              locationState,
-              expenseCategory,
-            };
-
-            if (expensesCollectionRef) {
-              // BATCH LOGIC
-              if (batchCount === 0) {
-                batch = writeBatch(firestore);
-              }
-
-              const newDocRef = doc(expensesCollectionRef); // Auto-ID
-              batch.set(newDocRef, newExpense);
-              existingSignatures.add(signature);
-
-              batchCount++;
-              successCount++;
-
-              if (batchCount >= 500) {
-                await batch.commit();
-                batchCount = 0;
-              }
-            }
-          }
-
-          // Commit any remaining writes
-          if (batchCount > 0 && batch) {
-            await batch.commit();
-          }
-
-          setImportResult({ successCount, errors, skippedCount });
-          setIsImportResultOpen(true);
-          setIsImporting(false);
-
-          if (expenseFileInputRef.current) expenseFileInputRef.current.value = '';
-        } else {
-          setIsImporting(false);
-        }
-      },
-      error: (error: any) => {
-        console.error('Error parsing CSV:', error);
-        alert('Error parsing CSV file: ' + (error.message || String(error)));
-        setIsImporting(false);
+    let successCount = 0;
+    let skippedCount = 0;
+    const errors: ImportError[] = [];
+    const existingSignatures = new Set<string>();
+    let minDateStr = '';
+    let maxDateStr = '';
+    importedExpenses.forEach((row: any) => {
+      if (row['Date']) {
+        const d = normalizeDateFormat(str(row['Date']));
+        if (!minDateStr || d < minDateStr) minDateStr = d;
+        if (!maxDateStr || d > maxDateStr) maxDateStr = d;
       }
     });
+    if (minDateStr && maxDateStr) {
+      try {
+        const q = query(expensesCollectionRef, where('date', '>=', minDateStr), where('date', '<=', maxDateStr));
+        const snapshot = await getDocs(q);
+        snapshot.forEach((d) => {
+          const e = d.data() as Expense;
+          existingSignatures.add(`${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`);
+        });
+      } catch (err) {
+        console.error('Error checking for duplicates:', err);
+      }
+    }
+    expenses.forEach((e) => {
+      existingSignatures.add(`${e.date}|${e.amount.toFixed(2)}|${e.description.toLowerCase().trim()}|${e.unitId?.trim() || ''}`);
+    });
+
+    let batch = writeBatch(firestore);
+    let batchCount = 0;
+    for (const row of importedExpenses) {
+      if (!str(row['Description']) || row['Amount'] == null) continue;
+      const unitId = str(row['Unit ID']);
+      const billTo = str(row['Bill To (D/O/C)']).toUpperCase();
+      const matchedDriver = drivers.find((d) => d.unitId === unitId);
+      const matchedOwner = owners.find((o) => o.unitId === unitId);
+      let type: 'driver' | 'owner' | 'company' = 'company';
+      if (billTo === 'D' || billTo === 'DRIVER') type = 'driver';
+      else if (billTo === 'O' || billTo === 'OWNER') type = 'owner';
+      else if (billTo === 'C' || billTo === 'COMPANY') type = 'company';
+      else {
+        if (matchedDriver) type = 'driver';
+        else if (matchedOwner) type = 'owner';
+        else type = 'company';
+      }
+      const driverId = type === 'driver' && matchedDriver ? matchedDriver.id : null;
+      const ownerId = type === 'owner' && matchedOwner ? matchedOwner.id : null;
+      const gallons = parseFloat(str(row['Gallons'])) || 0;
+      const locationState = str(row['State']).toUpperCase();
+      const expenseCategory = str(row['Expense Type']) || 'Fuel';
+      const dateStr = normalizeDateFormat(str(row['Date']));
+      const amount = parseNumber(row['Amount']) || 0;
+      const description = str(row['Description']);
+      const signature = `${dateStr}|${amount.toFixed(2)}|${description.toLowerCase()}|${unitId}`;
+      if (existingSignatures.has(signature)) {
+        skippedCount++;
+        continue;
+      }
+      const newExpense = {
+        date: dateStr,
+        description,
+        amount,
+        type,
+        driverId,
+        ownerId,
+        unitId,
+        gallons,
+        locationState,
+        expenseCategory,
+      };
+      const newDocRef = doc(expensesCollectionRef);
+      batch.set(newDocRef, newExpense);
+      existingSignatures.add(signature);
+      batchCount++;
+      successCount++;
+      if (batchCount >= 500) {
+        await batch.commit();
+        batch = writeBatch(firestore);
+        batchCount = 0;
+      }
+    }
+    if (batchCount > 0) await batch.commit();
+    setImportResult({ successCount, errors, skippedCount });
+    setIsImportResultOpen(true);
+    setExpenseImportParsed(null);
   };
 
   const handleExportPDF = async (summary: SettlementSummary | OwnerSettlementSummary, start: Date, end: Date) => {
@@ -1047,7 +1000,7 @@ export default function SettlementsPage() {
 
                 {/* Actions - Grouped */}
                 <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
-                  <input type="file" accept=".csv" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
+                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" ref={loadFileInputRef} onChange={handleImportLoads} />
                   <Button variant="outline" size="sm" onClick={handleGenerateLoadTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
                     <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
                   </Button>
@@ -1271,7 +1224,7 @@ export default function SettlementsPage() {
                 </div>
                 {/* Actions - Grouped */}
                 <div className="flex flex-wrap gap-2 w-full xl:w-auto xl:justify-end">
-                  <input type="file" accept=".csv" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
+                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" ref={expenseFileInputRef} onChange={handleImportExpenses} />
                   <Button variant="outline" size="sm" onClick={handleGenerateExpenseTemplate} className="rounded-lg h-9 flex-1 sm:flex-none" title="Download Template">
                     <Download className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Template</span>
                   </Button>
@@ -1494,9 +1447,43 @@ export default function SettlementsPage() {
         owners={owners || []}
       />
 
+      <ImportWithMappingDialog
+        open={loadMappingDialogOpen}
+        onOpenChange={setLoadMappingDialogOpen}
+        parsed={loadImportParsed}
+        config={SETTLEMENTS_LOAD_IMPORT_CONFIG}
+        title="Map load columns"
+        description="Match each field to a column in your file. Load # and Driver Name are required."
+        onConfirm={async (mapping) => {
+          setIsImporting(true);
+          try {
+            await runLoadImportWithMapping(mapping);
+          } finally {
+            setIsImporting(false);
+          }
+        }}
+      />
+
+      <ImportWithMappingDialog
+        open={expenseMappingDialogOpen}
+        onOpenChange={setExpenseMappingDialogOpen}
+        parsed={expenseImportParsed}
+        config={SETTLEMENTS_EXPENSE_IMPORT_CONFIG}
+        title="Map expense columns"
+        description="Match each field to a column in your file. Description and Amount are required."
+        onConfirm={async (mapping) => {
+          setIsImporting(true);
+          try {
+            await runExpenseImportWithMapping(mapping);
+          } finally {
+            setIsImporting(false);
+          }
+        }}
+      />
+
       <Dialog open={isImporting} onOpenChange={() => { }}>
         <DialogContent className="sm:max-w-xs flex flex-col items-center justify-center space-y-4 py-8 focus:outline-none" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-          <DialogTitle className="sr-only">Importing Expenses</DialogTitle>
+          <DialogTitle className="sr-only">Importing</DialogTitle>
           <Loader2 className="h-10 w-10 text-primary animate-spin" />
           <p className="text-lg font-medium text-center">Importing Expenses...</p>
           <p className="text-sm text-muted-foreground text-center">Please wait while we process the file.</p>

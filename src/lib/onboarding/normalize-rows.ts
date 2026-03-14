@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { parse } from 'date-fns';
 import type { ColumnMapping, NormalizedRow } from './types';
 import type { ParsedFile } from './types';
+import { parseDriverTariff } from '@/lib/driver-tariff';
 
 function parseNumber(val: unknown): number {
   if (val === null || val === undefined) return 0;
@@ -90,6 +91,26 @@ export function normalizeRows(parsed: ParsedFile, mapping: ColumnMapping): Norma
       return key != null ? getCell(row, key) : undefined;
     };
 
+    // Driver pay: prefer driverPayType + driverRate; else parse driverTariff (e.g. ".60 cpm" or "30% from gross")
+    let payType: NormalizedRow['payType'];
+    let rate: NormalizedRow['rate'];
+    if (mapping.driverPayType && mapping.driverRate) {
+      const pt = String(get('driverPayType') ?? '').trim().toLowerCase();
+      const r = parseNumber(get('driverRate'));
+      if (pt && (pt === 'cpm' || pt === 'percentage') && r >= 0) {
+        payType = pt as 'percentage' | 'cpm';
+        // Percentage: if value > 1 treat as percentage points (e.g. 30 → 0.30), else as decimal (0.25)
+        rate = pt === 'percentage' ? (r > 1 ? r / 100 : r) : r;
+      }
+    }
+    if (payType == null && mapping.driverTariff) {
+      const parsed = parseDriverTariff(get('driverTariff'));
+      if (parsed) {
+        payType = parsed.payType;
+        rate = parsed.rate;
+      }
+    }
+
     result.push({
       loadNumber,
       driverName,
@@ -104,6 +125,7 @@ export function normalizeRows(parsed: ParsedFile, mapping: ColumnMapping): Norma
       invoiceAmount: mapping.invoiceAmount ? parseNumber(get('invoiceAmount')) || undefined : undefined,
       totalPay: mapping.totalPay ? parseNumber(get('totalPay')) || undefined : undefined,
       miles: mapping.miles ? parseNumber(get('miles')) || undefined : undefined,
+      ...(payType != null && rate != null ? { payType, rate } : {}),
     });
   }
 

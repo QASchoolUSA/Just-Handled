@@ -21,8 +21,21 @@ import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import useLocalStorage from "@/hooks/use-local-storage";
 import { LS_KEYS, DEFAULT_ACCOUNTS } from "@/lib/constants";
 import { generateInvoiceCSV, generateJournalCSV } from "@/lib/reports";
-import { downloadCsv } from "@/lib/utils";
+import { downloadCsv, formatCurrency } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
+import {
+    ChartContainer,
+    ChartTooltip,
+    ChartTooltipContent,
+    type ChartConfig,
+} from "@/components/ui/chart";
+import { Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+    getPeriodKeysFromRange,
+    buildChartDataFromBuckets,
+    groupByPeriod,
+    type PeriodBucket,
+} from "@/lib/charts/aggregate-by-period";
 
 export default function ReportsPage() {
     const firestore = useFirestore();
@@ -166,6 +179,25 @@ export default function ReportsPage() {
     );
 
     const [accounts] = useLocalStorage<AccountSettings>(LS_KEYS.ACCOUNTS, DEFAULT_ACCOUNTS);
+
+    const reportsPeriodBucket: PeriodBucket = "month";
+    const reportsChartData = useMemo(() => {
+        if (!filteredLoads?.length || !dateRange?.from || !dateRange?.to) return [];
+        const periodKeys = getPeriodKeysFromRange(dateRange.from, dateRange.to, reportsPeriodBucket);
+        const baseRows = buildChartDataFromBuckets(periodKeys, reportsPeriodBucket);
+        const loadsByPeriod = groupByPeriod(filteredLoads, (l) => l.deliveryDate || l.pickupDate || "", reportsPeriodBucket);
+        return baseRows.map((row) => {
+            const periodLoads = loadsByPeriod.get(row.period) ?? [];
+            const revenue = periodLoads.reduce((s, l) => s + (l.invoiceAmount || 0), 0);
+            const miles = periodLoads.reduce((s, l) => s + (l.miles || 0), 0);
+            const factoring = periodLoads.reduce((s, l) => s + (l.factoringFee || 0), 0);
+            const rpm = miles > 0 ? revenue / miles : 0;
+            return { ...row, rpm: Math.round(rpm * 100) / 100, factoring: Math.round(factoring * 100) / 100 };
+        });
+    }, [filteredLoads, dateRange]);
+
+    const rpmChartConfig = { periodLabel: { label: "Period" }, rpm: { label: "RPM", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
+    const factoringChartConfig = { periodLabel: { label: "Period" }, factoring: { label: "Factoring Cost", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
 
     // --- Handlers ---
     const handleInvoiceExport = () => {
@@ -318,6 +350,45 @@ export default function ReportsPage() {
                 </div>
             )}
 
+            {!loading && reportsChartData.length > 0 && (
+                <div className="space-y-4">
+                    <h2 className="text-xl font-semibold">Analytics</h2>
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">Rate per mile over time</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ChartContainer config={rpmChartConfig} className="h-[220px] w-full">
+                                    <LineChart data={reportsChartData} margin={{ left: 12, right: 12 }}>
+                                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                        <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                                        <YAxis tickFormatter={(v: unknown) => formatCurrency(Number(v))} tickLine={false} axisLine={false} />
+                                        <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                                        <Line type="monotone" dataKey="rpm" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ChartContainer>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">Factoring cost over time</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ChartContainer config={factoringChartConfig} className="h-[220px] w-full">
+                                    <AreaChart data={reportsChartData} margin={{ left: 12, right: 12 }}>
+                                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                        <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                                        <YAxis tickFormatter={(v: unknown) => formatCurrency(Number(v))} tickLine={false} axisLine={false} />
+                                        <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                                        <Area type="monotone" dataKey="factoring" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.3} />
+                                    </AreaChart>
+                                </ChartContainer>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

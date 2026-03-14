@@ -145,6 +145,8 @@ export type ImportResult = {
   successCount: number;
   errors: ImportError[];
   skippedCount?: number;
+  /** Number of existing drivers updated (e.g. pay/rate) instead of created */
+  updatedCount?: number;
 };
 
 export type SettlementSummary = {

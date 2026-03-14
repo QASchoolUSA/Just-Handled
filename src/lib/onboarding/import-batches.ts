@@ -60,11 +60,21 @@ export async function runOnboardingImport(
   let driversCreated = 0;
   let loadsCreated = 0;
 
-  const uniqueDrivers = new Map<string, { driverName: string; truckId: string }>();
+  const uniqueDrivers = new Map<string, { driverName: string; truckId: string; payType?: 'percentage' | 'cpm'; rate?: number }>();
   for (const r of rows) {
     const key = driverKey(r.driverName, r.truckId ?? '');
     if (!uniqueDrivers.has(key)) {
-      uniqueDrivers.set(key, { driverName: r.driverName, truckId: r.truckId ?? '' });
+      uniqueDrivers.set(key, {
+        driverName: r.driverName,
+        truckId: r.truckId ?? '',
+        ...(r.payType != null && r.rate != null ? { payType: r.payType, rate: r.rate } : {}),
+      });
+    } else {
+      const cur = uniqueDrivers.get(key)!;
+      if ((cur.payType == null || cur.rate == null) && r.payType != null && r.rate != null) {
+        cur.payType = r.payType;
+        cur.rate = r.rate;
+      }
     }
   }
 
@@ -88,10 +98,10 @@ export async function runOnboardingImport(
   for (let i = 0; i < driversToCreate.length; i += BATCH_SIZE) {
     const chunk = driversToCreate.slice(i, i + BATCH_SIZE);
     const batch = writeBatch(firestore);
-    for (const [key, { driverName, truckId }] of chunk) {
+    for (const [key, { driverName, truckId, payType, rate }] of chunk) {
       const { firstName, lastName } = nameToFirstLast(driverName);
       const docRef = doc(driversCollection);
-      batch.set(docRef, {
+      const base: Record<string, unknown> = {
         firstName: firstName || 'Unknown',
         lastName: lastName || '',
         unitId: truckId || '',
@@ -104,7 +114,12 @@ export async function runOnboardingImport(
           fuel: 0,
           tolls: 0,
         },
-      });
+      };
+      if (payType != null && rate != null) {
+        base.payType = payType;
+        base.rate = rate;
+      }
+      batch.set(docRef, base);
       driverIdByKey.set(key, docRef.id);
     }
     await batch.commit();
@@ -126,6 +141,24 @@ export async function runOnboardingImport(
     driverIdByKey.set(key, driver.id);
   }
 
+  // Update existing drivers with pay data when re-importing with driver pay columns (no new driver docs created)
+  const driverPayUpdates = Array.from(uniqueDrivers.entries()).filter(
+    ([key]) => existingByKey.has(key)
+  );
+  for (const [key, { payType, rate }] of driverPayUpdates) {
+    if (payType == null || rate == null) continue;
+    const driverId = driverIdByKey.get(key);
+    if (!driverId) continue;
+    await updateDoc(doc(driversCollection, driverId), { payType, rate });
+  }
+
+  /** Within this import, consider duplicate only if load number AND customer/broker match (same load # with different broker = separate loads). */
+  function loadDedupKey(row: NormalizedRow): string {
+    const broker = (row.customer ?? '').trim().toLowerCase();
+    return `${(row.loadNumber ?? '').trim()}::${broker}`;
+  }
+  const seenLoadKeys = new Set<string>();
+
   const totalLoadBatches = Math.ceil(rows.length / BATCH_SIZE) || 1;
   batchStartMs = Date.now();
 
@@ -139,6 +172,10 @@ export async function runOnboardingImport(
         errors.push(`No driver for "${row.driverName}" (Load ${row.loadNumber})`);
         continue;
       }
+      const dedupKey = loadDedupKey(row);
+      if (seenLoadKeys.has(dedupKey)) continue; // skip only when same load # and same broker in this file
+      seenLoadKeys.add(dedupKey);
+
       const loadRef = doc(loadsCollection);
       const loadData: Omit<Load, 'id'> = {
         loadNumber: row.loadNumber,

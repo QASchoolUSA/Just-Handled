@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useMemo } from 'react';
-import { PlusCircle, Upload, Download, Loader2, AlertCircle, CheckCircle, Search, ArrowUpDown } from 'lucide-react';
+import { PlusCircle, Upload, Download, Loader2, AlertCircle, CheckCircle, Search, ArrowUpDown, CalendarIcon, Trophy } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input';
 import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,17 +20,28 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import dynamic from 'next/dynamic';
 
 const DriverForm = dynamic(() => import('@/components/driver-form').then(mod => mod.DriverForm), { ssr: false });
 const BlockingLoadingModal = dynamic(() => import('@/components/blocking-loading-modal'), { ssr: false });
 
-import type { Driver } from '@/lib/types';
-import { formatCurrency, toTitleCase, formatPhoneNumber } from '@/lib/utils';
+import type { Driver, Load, Expense } from '@/lib/types';
+import { formatCurrency, toTitleCase, formatPhoneNumber, calculateDriverPay } from '@/lib/utils';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { useFirestore, useCompany } from '@/firebase/provider';
-import { collection, doc } from 'firebase/firestore';
+import { collection, doc, getDocs, query, where } from 'firebase/firestore';
+import { format, subDays, startOfDay, endOfDay, isWithinInterval, parseISO, parse } from 'date-fns';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { parseDriverTariff } from '@/lib/driver-tariff';
+import { parseUploadedFile } from '@/lib/onboarding/parse-file';
+import type { ParsedFile } from '@/lib/onboarding/types';
+import { getMappedCell } from '@/lib/import-mapping';
+import type { ColumnMapping } from '@/lib/import-mapping';
+import { DRIVER_IMPORT_CONFIG } from '@/lib/import-configs';
+import { ImportWithMappingDialog } from '@/components/import-with-mapping-dialog';
 
 export default function DriversPage() {
   const firestore = useFirestore();
@@ -45,9 +56,131 @@ export default function DriversPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
+  const [importParsed, setImportParsed] = useState<ParsedFile | null>(null);
+  const [importMappingDialogOpen, setImportMappingDialogOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
+
+  const dateRange = useMemo(() => {
+    if (selectedPeriod === 'custom' && customStartDate && customEndDate) {
+      return { start: startOfDay(customStartDate), end: endOfDay(customEndDate) };
+    }
+    const end = new Date();
+    const days = selectedPeriod === '7d' ? 7 : selectedPeriod === '30d' ? 30 : selectedPeriod === '90d' ? 90 : selectedPeriod === '180d' ? 180 : selectedPeriod === '365d' ? 365 : 30;
+    return { start: startOfDay(subDays(end, days)), end: endOfDay(end) };
+  }, [selectedPeriod, customStartDate, customEndDate]);
+
+  const loadsQuery = useMemoFirebase(() => {
+    if (!firestore || !companyId) return null;
+    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
+    const toStr = format(dateRange.end, 'yyyy-MM-dd');
+    return query(
+      collection(firestore, `companies/${companyId}/loads`),
+      where('deliveryDate', '>=', fromStr),
+      where('deliveryDate', '<=', toStr)
+    );
+  }, [firestore, companyId, dateRange.start, dateRange.end]);
+
+  const expensesQuery = useMemoFirebase(() => {
+    if (!firestore || !companyId) return null;
+    const fromStr = format(dateRange.start, 'yyyy-MM-dd');
+    const toStr = format(dateRange.end, 'yyyy-MM-dd');
+    return query(
+      collection(firestore, `companies/${companyId}/expenses`),
+      where('date', '>=', fromStr),
+      where('date', '<=', toStr + 'T23:59:59.999Z')
+    );
+  }, [firestore, companyId, dateRange.start, dateRange.end]);
+
+  const { data: loads } = useCollection<Load>(loadsQuery);
+  const { data: expenses } = useCollection<Expense>(expensesQuery);
+
+  const parseDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return parseISO(dateStr.split('T')[0]);
+    const p = parse(dateStr, 'dd-MMM-yy', new Date());
+    return isNaN(p.getTime()) ? new Date() : p;
+  };
+
+  const driverEarnings = useMemo(() => {
+    if (!drivers || !loads || !expenses) return [];
+    const driverMap = new Map(drivers.map(d => [d.id, d]));
+    const interval = { start: dateRange.start, end: dateRange.end };
+    const weeksInRange = Math.max(1, Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+
+    type Row = { driverId: string; driverName: string; unitId?: string; loadCount: number; grossPay: number; totalDeductions: number; totalAdditions: number; netPay: number };
+    const byDriver = new Map<string, Row>();
+
+    drivers.forEach(d => {
+      const recurring = (d.recurringDeductions?.insurance ?? 0) + (d.recurringDeductions?.escrow ?? 0);
+      byDriver.set(d.id, {
+        driverId: d.id,
+        driverName: toTitleCase(`${d.firstName} ${d.lastName}`),
+        unitId: d.unitId,
+        loadCount: 0,
+        grossPay: 0,
+        totalDeductions: recurring * weeksInRange,
+        totalAdditions: 0,
+        netPay: 0,
+      });
+    });
+
+    loads.forEach(load => {
+      const d = parseDate(load.deliveryDate ?? '');
+      if (!isWithinInterval(d, interval)) return;
+      const driver = driverMap.get(load.driverId);
+      const row = byDriver.get(load.driverId);
+      if (driver && row) {
+        row.loadCount += 1;
+        row.grossPay += calculateDriverPay(load, driver);
+      }
+    });
+
+    expenses.forEach(exp => {
+      const d = parseDate(exp.date ?? '');
+      if (!isWithinInterval(d, interval)) return;
+      if (exp.type === 'driver' && exp.driverId) {
+        const row = byDriver.get(exp.driverId);
+        if (row) {
+          if (exp.category === 'addition') {
+            row.totalAdditions += exp.amount ?? 0;
+          } else {
+            row.totalDeductions += exp.amount ?? 0;
+          }
+        }
+      }
+      if (exp.type === 'owner' && exp.reimbursable && exp.driverId) {
+        const row = byDriver.get(exp.driverId);
+        if (row) row.totalAdditions += exp.amount ?? 0;
+      }
+    });
+
+    byDriver.forEach(row => {
+      row.netPay = row.grossPay + row.totalAdditions - row.totalDeductions;
+    });
+
+    return Array.from(byDriver.values())
+      .filter(r => r.loadCount > 0 || r.totalDeductions > 0 || r.totalAdditions > 0)
+      .sort((a, b) => b.grossPay - a.grossPay);
+  }, [drivers, loads, expenses, dateRange]);
+
+  const scoreboardTotals = useMemo(() => {
+    return driverEarnings.reduce(
+      (acc, r) => ({
+        loadCount: acc.loadCount + r.loadCount,
+        grossPay: acc.grossPay + r.grossPay,
+        totalDeductions: acc.totalDeductions + r.totalDeductions,
+        netPay: acc.netPay + r.netPay,
+      }),
+      { loadCount: 0, grossPay: 0, totalDeductions: 0, netPay: 0 }
+    );
+  }, [driverEarnings]);
 
   const handleSortToggle = () => {
     setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -109,9 +242,10 @@ export default function DriversPage() {
 
   const handleDownloadTemplate = () => {
     const csvData = [
-      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls', 'Termination Date'],
-      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '100', '50', '35', '25', '200', '50', ''],
-      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '150', '0', '35', '0', '0', '0', '2023-12-31']
+      ['First Name', 'Last Name', 'Unit ID', 'Contact number', 'Email', 'Pay Type (percentage/cpm)', 'Rate', 'Driver Tariff (e.g. .60 cpm or 30% from gross)', 'Insurance (Weekly)', 'Escrow (Weekly)', 'ELD', 'Admin Fee', 'Fuel', 'Tolls', 'Termination Date'],
+      ['John', 'Doe', '101', '555-1234', 'john@example.com', 'percentage', '0.25', '', '100', '50', '35', '25', '200', '50', ''],
+      ['Jane', 'Smith', '102', '555-5678', 'jane@test.com', 'cpm', '0.65', '', '150', '0', '35', '0', '0', '0', '2023-12-31'],
+      ['Bob', 'Wilson', '103', '', '', '', '', '30% from gross', '0', '0', '35', '0', '0', '0', '']
     ];
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -128,136 +262,130 @@ export default function DriversPage() {
     fileInputRef.current?.click();
   };
 
-  // Helper to read CSV columns in a case-insensitive way
-  const getField = (row: any, ...candidates: string[]) => {
-    if (!row) return undefined;
-    const lowerCandidates = candidates.map((c) => c.toLowerCase());
-    for (const key of Object.keys(row)) {
-      const normalizedKey = key.trim().toLowerCase();
-      if (lowerCandidates.includes(normalizedKey)) {
-        return row[key];
-      }
-    }
-    return undefined;
-  };
-
-  const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setIsImporting(true);
     setImportResult(null);
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: 'greedy',
-      transformHeader: (h) => h.trim(), // Handle BOM or spaces
-      complete: async (results) => {
-        try {
-          if (results.data && firestore && driversCollection) {
-            const importedDrivers = results.data as any[];
-            const errors: any[] = [];
-            let successCount = 0;
-
-            // Process in parallel for speed and to avoid hanging
-            await Promise.all(importedDrivers.map(async (row, i) => {
-              const rowNumber = i + 2;
-
-              // Robust check: Requires Name / First Name to be present (case-insensitive).
-              // Pay Type & Rate are optional; they will default if missing.
-              const nameValue = getField(row, 'First Name', 'first name', 'Name');
-              const payTypeValue = getField(row, 'Pay Type (percentage/cpm)');
-              const hasName = !!nameValue;
-
-              if (!hasName) {
-                // Only report if row has some data
-                if (Object.values(row).some(v => !!v)) {
-                  errors.push({
-                    row: rowNumber,
-                    reason: `Missing required field (Name). Found: ${JSON.stringify(row)}`,
-                    data: row
-                  });
-                }
-                return;
-              }
-
-              try {
-                const payTypeRaw = String(payTypeValue || '').toLowerCase();
-                const payType = payTypeRaw.includes('cpm') ? 'cpm' : 'percentage';
-
-                const rate = parseFloat(getField(row, 'Rate') || 0) || 0;
-                const insurance = parseFloat(getField(row, 'Insurance (Weekly)') || 0) || 0;
-                const escrow = parseFloat(getField(row, 'Escrow (Weekly)') || 0) || 0;
-                const eld = parseFloat(getField(row, 'ELD') || 0) || 0;
-                const adminFee = parseFloat(getField(row, 'Admin Fee') || 0) || 0;
-                const fuel = parseFloat(getField(row, 'Fuel') || 0) || 0;
-                const tolls = parseFloat(getField(row, 'Tolls') || 0) || 0;
-                const terminationDate = getField(row, 'Termination Date') || '';
-
-                // If termination date is present, mark as inactive and clear Unit ID
-                const status = terminationDate ? 'inactive' : 'active';
-                const unitId = status === 'inactive' ? '' : (getField(row, 'Unit ID') || '');
-
-                const newDriver = {
-                  firstName: getField(row, 'First Name', 'first name') ||
-                    (getField(row, 'Name') ? String(getField(row, 'Name')).split(' ')[0] : '') ||
-                    '',
-                  lastName:
-                    getField(row, 'Last Name', 'last name') ||
-                    (getField(row, 'Name')
-                      ? String(getField(row, 'Name'))
-                          .split(' ')
-                          .slice(1)
-                          .join(' ')
-                      : '') ||
-                    '',
-                  unitId,
-                  email: getField(row, 'Email', 'email') || '',
-                  phoneNumber: getField(row, 'Contact number', 'contact number', 'Phone', 'Phone Number') || '',
-                  payType,
-                  rate,
-                  status,
-                  terminationDate,
-                  recurringDeductions: {
-                    insurance,
-                    escrow,
-                    eld,
-                    adminFee,
-                    fuel,
-                    tolls,
-                  },
-                };
-
-                await addDocumentNonBlocking(driversCollection, newDriver);
-                successCount++;
-              } catch (err: any) {
-                errors.push({
-                  row: rowNumber,
-                  reason: `Failed to save: ${err.message}`,
-                  data: row
-                });
-              }
-            }));
-
-            setImportResult({ successCount, errors, skippedCount: 0 });
-            setIsImportResultOpen(true);
-
-            // Reset file input
-            if (fileInputRef.current) fileInputRef.current.value = '';
-          }
-        } catch (err) {
-          console.error("Critical import error:", err);
-          alert("A critical error occurred during import.");
-        } finally {
-          setIsImporting(false);
-        }
-      },
-      error: (error) => {
-        console.error('Error parsing CSV:', error);
-        alert('Error parsing CSV file. Please check the format.');
-        setIsImporting(false);
+    try {
+      const parsed = await parseUploadedFile(file);
+      if (parsed.rows.length === 0) {
+        alert('No data rows found in the file.');
+        return;
       }
+      setImportParsed(parsed);
+      setImportMappingDialogOpen(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to parse file.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const runDriverImportWithMapping = async (mapping: ColumnMapping) => {
+    if (!importParsed || !firestore || !driversCollection || !companyId) return;
+    const errors: any[] = [];
+    let successCount = 0;
+    let updatedCount = 0;
+    const { headers, rows } = importParsed;
+
+    const get = (row: Record<string, unknown>, fieldId: string) => getMappedCell(row, fieldId, mapping, headers);
+
+    const existingSnap = await getDocs(driversCollection);
+    const existingByKey = new Map<string, Driver & { id: string }>();
+    existingSnap.forEach((d) => {
+      const data = d.data() as Driver;
+      const first = (data.firstName || '').trim().toLowerCase();
+      const last = (data.lastName || '').trim().toLowerCase();
+      existingByKey.set(`${first}::${last}`, { ...data, id: d.id });
     });
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] as Record<string, unknown>;
+      const rowNumber = i + 2;
+      const firstVal = get(row, 'firstName');
+      const nameStr = firstVal != null ? String(firstVal).trim() : '';
+      if (!nameStr) {
+        if (Object.values(row).some((v) => v != null && String(v).trim() !== '')) {
+          errors.push({ row: rowNumber, reason: 'Missing required field (First Name or Name).', data: row });
+        }
+        continue;
+      }
+
+      try {
+        let firstName = nameStr;
+        let lastName = '';
+        const lastVal = get(row, 'lastName');
+        if (lastVal != null && String(lastVal).trim() !== '') {
+          lastName = String(lastVal).trim();
+        } else if (nameStr.includes(' ')) {
+          const parts = nameStr.split(/\s+/);
+          firstName = parts[0] ?? '';
+          lastName = parts.slice(1).join(' ');
+        }
+        const nameKey = `${firstName.toLowerCase()}::${lastName.toLowerCase()}`;
+
+        const payTypeCol = get(row, 'payType');
+        const rateCol = get(row, 'rate');
+        const tariffCol = get(row, 'driverTariff');
+        let payType: 'percentage' | 'cpm' = 'percentage';
+        let rate = 0;
+        if (payTypeCol != null && String(payTypeCol).trim() !== '' && rateCol != null && String(rateCol).trim() !== '') {
+          const payTypeRaw = String(payTypeCol).toLowerCase();
+          payType = payTypeRaw.includes('cpm') ? 'cpm' : 'percentage';
+          rate = parseFloat(String(rateCol)) || 0;
+        } else {
+          const parsed = parseDriverTariff(tariffCol);
+          if (parsed) {
+            payType = parsed.payType;
+            rate = parsed.rate;
+          }
+        }
+
+        const terminationDate = get(row, 'terminationDate');
+        const termStr = terminationDate != null ? String(terminationDate).trim() : '';
+        const status = termStr ? 'inactive' : 'active';
+        const unitId = status === 'inactive' ? '' : (get(row, 'unitId') != null ? String(get(row, 'unitId')).trim() : '');
+
+        const num = (v: unknown) => (v != null && v !== '' ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
+        const payload = {
+          firstName: firstName || 'Unknown',
+          lastName,
+          unitId,
+          email: get(row, 'email') != null ? String(get(row, 'email')).trim() : '',
+          phoneNumber: get(row, 'phoneNumber') != null ? String(get(row, 'phoneNumber')).trim() : '',
+          payType,
+          rate,
+          status,
+          terminationDate: termStr,
+          recurringDeductions: {
+            insurance: num(get(row, 'insurance')),
+            escrow: num(get(row, 'escrow')),
+            eld: num(get(row, 'eld')),
+            adminFee: num(get(row, 'adminFee')),
+            fuel: num(get(row, 'fuel')),
+            tolls: num(get(row, 'tolls')),
+          },
+        };
+
+        const existing = existingByKey.get(nameKey);
+        if (existing) {
+          const driverDoc = doc(firestore, `companies/${companyId}/drivers`, existing.id);
+          await setDocumentNonBlocking(driverDoc, payload, { merge: true });
+          updatedCount++;
+        } else {
+          await addDocumentNonBlocking(driversCollection, payload);
+          successCount++;
+        }
+      } catch (err: any) {
+        errors.push({ row: rowNumber, reason: err?.message ?? 'Failed to save', data: row });
+      }
+    }
+
+    setImportResult({ successCount, errors, skippedCount: 0, updatedCount });
+    setIsImportResultOpen(true);
+    setImportParsed(null);
   };
 
   const handleSaveDriver = async (driverData: any) => {
@@ -339,7 +467,7 @@ export default function DriversPage() {
         <div className="flex items-center gap-3">
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx,.xls"
             className="hidden"
             ref={fileInputRef}
             onChange={handleImportFile}
@@ -349,13 +477,152 @@ export default function DriversPage() {
           </Button>
           <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
             {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-            {isImporting ? 'Importing...' : 'Import CSV'}
+            {isImporting ? 'Importing...' : 'Import CSV/Excel'}
           </Button>
           <Button onClick={handleAddDriver} className="rounded-xl shadow-sm hover:shadow-md transition-all">
             <PlusCircle className="mr-2 h-4 w-4" /> Add Driver
           </Button>
         </div>
       </div>
+
+      <ImportWithMappingDialog
+        open={importMappingDialogOpen}
+        onOpenChange={setImportMappingDialogOpen}
+        parsed={importParsed}
+        config={DRIVER_IMPORT_CONFIG}
+        title="Map driver columns"
+        description="Match each field to a column in your file. First Name or Name is required."
+        onConfirm={async (mapping) => {
+          setIsImporting(true);
+          try {
+            await runDriverImportWithMapping(mapping);
+          } finally {
+            setIsImporting(false);
+          }
+        }}
+      />
+
+      {/* Driver earnings scoreboard */}
+      <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
+        <CardHeader className="bg-muted/30 border-b border-border/40">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1 flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="font-display">Driver Earnings</CardTitle>
+                <CardDescription>Gross pay, deductions, and net pay by period.</CardDescription>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as Period)}>
+                <TabsList className="grid grid-cols-6 max-w-2xl">
+                  <TabsTrigger value="7d">Week</TabsTrigger>
+                  <TabsTrigger value="30d">Month</TabsTrigger>
+                  <TabsTrigger value="90d">3M</TabsTrigger>
+                  <TabsTrigger value="180d">6M</TabsTrigger>
+                  <TabsTrigger value="365d">Year</TabsTrigger>
+                  <TabsTrigger value="custom">Custom</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {selectedPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {customStartDate ? format(customStartDate, 'LLL d, yyyy') : 'Start'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={customStartDate}
+                        onSelect={setCustomStartDate}
+                        disabled={(date) => (customEndDate ? date > customEndDate : false)}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-[130px] justify-start text-left font-normal rounded-xl">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {customEndDate ? format(customEndDate, 'LLL d, yyyy') : 'End'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={customEndDate}
+                        onSelect={setCustomEndDate}
+                        disabled={(date) => (customStartDate ? date < customStartDate : false)}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground hidden sm:inline">
+                {format(dateRange.start, 'MMM d, yyyy')} – {format(dateRange.end, 'MMM d, yyyy')}
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-6">Driver</TableHead>
+                <TableHead>Unit ID</TableHead>
+                <TableHead className="text-right">Loads</TableHead>
+                <TableHead className="text-right">Gross Pay</TableHead>
+                <TableHead className="text-right">Deductions</TableHead>
+                <TableHead className="text-right">Net Pay</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {driverEarnings.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    No earnings in this period. Change the range or add loads.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                driverEarnings.map((row) => (
+                  <TableRow key={row.driverId} className="hover:bg-muted/50">
+                    <TableCell className="font-medium pl-6">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8 border border-border/50">
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                            {row.driverName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        {row.driverName}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-muted-foreground">{row.unitId || '—'}</TableCell>
+                    <TableCell className="text-right font-mono">{row.loadCount}</TableCell>
+                    <TableCell className="text-right font-medium text-green-700 dark:text-green-400">{formatCurrency(row.grossPay)}</TableCell>
+                    <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(row.totalDeductions)}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatCurrency(row.netPay)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+            {driverEarnings.length > 0 && (
+              <TableFooter>
+                <TableRow className="bg-muted/50 font-semibold hover:bg-muted/50">
+                  <TableCell className="pl-6">Total</TableCell>
+                  <TableCell />
+                  <TableCell className="text-right font-mono">{scoreboardTotals.loadCount}</TableCell>
+                  <TableCell className="text-right text-green-700 dark:text-green-400">{formatCurrency(scoreboardTotals.grossPay)}</TableCell>
+                  <TableCell className="text-right text-red-600 dark:text-red-400">{formatCurrency(scoreboardTotals.totalDeductions)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(scoreboardTotals.netPay)}</TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-xl overflow-hidden border-border/50 shadow-sm">
         <CardHeader className="bg-muted/30 border-b border-border/40">
@@ -489,8 +756,10 @@ export default function DriversPage() {
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
             <DialogDescription>
-              {importResult?.successCount} drivers imported successfully.
-              {importResult?.errors && importResult.errors.length > 0 && ` ${importResult.errors.length} rows failed.`}
+              {importResult?.successCount != null && importResult.successCount > 0 && `${importResult.successCount} driver${importResult.successCount !== 1 ? 's' : ''} created. `}
+              {importResult?.updatedCount != null && importResult.updatedCount > 0 && `${importResult.updatedCount} existing driver${importResult.updatedCount !== 1 ? 's' : ''} updated. `}
+              {(!importResult?.successCount && !importResult?.updatedCount) && importResult?.errors?.length === 0 && 'No rows to import. '}
+              {importResult?.errors && importResult.errors.length > 0 && `${importResult.errors.length} row${importResult.errors.length !== 1 ? 's' : ''} failed.`}
             </DialogDescription>
           </DialogHeader>
 

@@ -36,6 +36,19 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { useCompany } from '@/firebase/provider';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { parse, subDays, isWithinInterval, format, startOfDay, endOfDay, parseISO } from 'date-fns';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import {
+  getPeriodKeysFromRange,
+  buildChartDataFromBuckets,
+  groupByPeriod,
+  type PeriodBucket,
+} from '@/lib/charts/aggregate-by-period';
 
 // Helper to safely parse numbers that might have currency symbols, commas, etc.
 const safeParseNumber = (value: any): number => {
@@ -124,12 +137,12 @@ export default function LoadboardPage() {
   const { data: dashboardLoads, loading: dashboardLoading } = useCollection<Load>(loadsQuery);
   const { data: allLoads, loading: allLoadsLoading } = useCollection<Load>(allLoadsQuery);
 
-  // Filter dashboard loads by precise interval just in case
+  // Filter dashboard loads by precise interval (delivery date)
   const filteredDashboardLoads = useMemo(() => {
     if (!dashboardLoads) return [];
     return dashboardLoads.filter(load => {
       try {
-        const loadDate = parseDateAny(load.pickupDate);
+        const loadDate = parseDateAny(load.deliveryDate);
         return isWithinInterval(loadDate, dateRange);
       } catch {
         return false;
@@ -137,34 +150,24 @@ export default function LoadboardPage() {
     });
   }, [dashboardLoads, dateRange]);
 
-  // Dedupe and base-sort all loads
-  const dedupedLoads = useMemo(() => {
+  // Base-sort all loads (no dedupe so counts match Firestore and source file)
+  const sortedLoads = useMemo(() => {
     if (!allLoads) return [];
-    const sorted = [...allLoads].sort((a, b) => {
+    return [...allLoads].sort((a, b) => {
       const dA = parseDateAny(a.pickupDate || a.deliveryDate).getTime();
       const dB = parseDateAny(b.pickupDate || b.deliveryDate).getTime();
       return dB - dA;
     });
-    const seen = new Set<string>();
-    const deduped: Load[] = [];
-    for (const load of sorted) {
-      const key = (load.loadNumber ? `loadNumber:${load.loadNumber}` : `id:${load.id || ''}`).trim();
-      if (!key) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(load);
-    }
-    return deduped;
   }, [allLoads]);
 
   // Search by load #
   const searchFilteredLoads = useMemo(() => {
     const q = loadSearch.trim().toLowerCase();
-    if (!q) return dedupedLoads;
-    return dedupedLoads.filter((load) =>
+    if (!q) return sortedLoads;
+    return sortedLoads.filter((load) =>
       String(load.loadNumber ?? '').toLowerCase().includes(q)
     );
-  }, [dedupedLoads, loadSearch]);
+  }, [sortedLoads, loadSearch]);
 
   // Sort
   const sortedTableLoads = useMemo(() => {
@@ -262,6 +265,33 @@ export default function LoadboardPage() {
     };
   }, [filteredDashboardLoads]);
 
+  const loadboardPeriodBucket: PeriodBucket = selectedPeriod === '7d' || selectedPeriod === '30d' ? 'week' : 'month';
+  const loadboardChartData = useMemo(() => {
+    if (!filteredDashboardLoads?.length) return [];
+    const periodKeys = getPeriodKeysFromRange(dateRange.start, dateRange.end, loadboardPeriodBucket);
+    const baseRows = buildChartDataFromBuckets(periodKeys, loadboardPeriodBucket);
+    const loadsByPeriod = groupByPeriod(
+      filteredDashboardLoads,
+      (l) => l.deliveryDate || l.pickupDate || '',
+      loadboardPeriodBucket
+    );
+    return baseRows.map((row) => {
+      const periodLoads = loadsByPeriod.get(row.period) ?? [];
+      const revenue = periodLoads.reduce((s, l) => s + safeParseNumber(l.invoiceAmount), 0);
+      const miles = periodLoads.reduce((s, l) => s + safeParseNumber(l.miles), 0);
+      return { ...row, revenue: Math.round(revenue * 100) / 100, miles, loadCount: periodLoads.length };
+    });
+  }, [filteredDashboardLoads, dateRange, loadboardPeriodBucket]);
+
+  const loadboardRevenueMilesConfig = {
+    periodLabel: { label: 'Period' },
+    revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
+    miles: { label: 'Miles', color: 'hsl(var(--chart-2))' },
+  } satisfies ChartConfig;
+  const loadboardLoadCountConfig = {
+    periodLabel: { label: 'Period' },
+    loadCount: { label: 'Loads', color: 'hsl(var(--chart-3))' },
+  } satisfies ChartConfig;
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -365,6 +395,7 @@ export default function LoadboardPage() {
               ))}
             </div>
           ) : (
+            <>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 lg:grid-rows-2">
                <Card className="border-l-4 border-l-blue-500 hover:shadow-md transition-all">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -431,6 +462,46 @@ export default function LoadboardPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {loadboardChartData.length > 0 && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Revenue and miles over time</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={loadboardRevenueMilesConfig} className="h-[240px] w-full">
+                      <LineChart data={loadboardChartData} margin={{ left: 12, right: 12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" tickFormatter={(v: unknown) => `$${Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : Number(v)}`} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="right" orientation="right" tickFormatter={(v: unknown) => `${Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : Number(v)} mi`} tickLine={false} axisLine={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v, name) => (String(name) === 'Miles' ? `${Number(v).toLocaleString()} mi` : formatCurrency(Number(v)))} />} />
+                        <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} name="Revenue" />
+                        <Line yAxisId="right" type="monotone" dataKey="miles" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} name="Miles" />
+                      </LineChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Load count trend</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={loadboardLoadCountConfig} className="h-[240px] w-full">
+                      <BarChart data={loadboardChartData} margin={{ left: 12, right: 12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="periodLabel" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                        <Bar dataKey="loadCount" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}

@@ -11,10 +11,7 @@ import { cn } from "@/lib/utils"
  * Radix can leave pointer-events: none on body after closing (e.g. via outside click), which blocks all interaction.
  * @see https://github.com/radix-ui/primitives/issues/1241
  */
-const Dialog = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>
->(({ open, ...props }, ref) => {
+function Dialog({ open, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
   React.useEffect(() => {
     if (open === false) {
       const id = setTimeout(() => {
@@ -24,8 +21,8 @@ const Dialog = React.forwardRef<
       return () => clearTimeout(id)
     }
   }, [open])
-  return <DialogPrimitive.Root ref={ref} open={open} {...props} />
-})
+  return <DialogPrimitive.Root open={open} {...props} />
+}
 Dialog.displayName = "Dialog"
 
 const DialogTrigger = DialogPrimitive.Trigger

@@ -12,6 +12,13 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    ChartContainer,
+    ChartTooltip,
+    ChartTooltipContent,
+    type ChartConfig,
+} from "@/components/ui/chart";
+import { Bar, BarChart, XAxis, YAxis, Cell } from "recharts";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
 import { collection, query, where } from "firebase/firestore";
@@ -254,6 +261,75 @@ export default function ProfitLossPage() {
                             </CardHeader>
                             <CardContent className="p-4 pt-0">
                                 <div className="text-2xl font-bold">{formatCurrency(metrics.kpis.cpm)}</div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* P&L Composition Chart */}
+                    <div className="grid gap-6 md:grid-cols-2">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">P&L composition</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {(() => {
+                                    const compositionData = [
+                                        { name: "Revenue", value: metrics.revenue.total, fill: "hsl(var(--chart-1))" },
+                                        { name: "COGS", value: -metrics.cogs.total, fill: "hsl(var(--chart-2))" },
+                                        { name: "Opex", value: -metrics.opex.total, fill: "hsl(var(--chart-3))" },
+                                        { name: "Financial", value: -metrics.financial.total, fill: "hsl(var(--chart-4))" },
+                                        { name: "Net Profit", value: metrics.netProfit, fill: metrics.netProfit >= 0 ? "hsl(var(--chart-1))" : "hsl(var(--destructive))" },
+                                    ].filter((d) => d.value !== 0);
+                                    const plConfig = { name: { label: "Category" }, value: { label: "Amount", color: "hsl(var(--chart-1))" } } satisfies ChartConfig;
+                                    return (
+                                        <ChartContainer config={plConfig} className="h-[260px] w-full">
+                                            <BarChart data={compositionData} layout="vertical" margin={{ left: 12, right: 12 }}>
+                                                <XAxis type="number" tickFormatter={(v: unknown) => `$${Number(v) >= 0 ? "" : "-"}${Math.abs(Number(v)) >= 1000 ? `${(Math.abs(Number(v)) / 1000).toFixed(1)}k` : Math.abs(Number(v))}`} />
+                                                <YAxis type="category" dataKey="name" width={80} tickLine={false} axisLine={false} />
+                                                <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                                                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                                    {compositionData.map((entry, index) => (
+                                                        <Cell key={entry.name} fill={entry.fill} />
+                                                    ))}
+                                                </Bar>
+                                            </BarChart>
+                                        </ChartContainer>
+                                    );
+                                })()}
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">Expense by category</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {(() => {
+                                    const expenseCategories = [
+                                        { name: "Driver Wages", value: metrics.cogs.driverWages },
+                                        { name: "Fuel", value: metrics.cogs.fuel },
+                                        { name: "Factoring", value: metrics.financial.factoring },
+                                        { name: "Truck / Lease", value: metrics.opex.truckPayments },
+                                        { name: "Insurance", value: metrics.opex.insurance },
+                                        { name: "Repairs & Maint", value: metrics.opex.repairsMaint },
+                                        { name: "Tolls", value: metrics.cogs.tolls },
+                                        { name: "Tires", value: metrics.opex.tires },
+                                        { name: "Permits", value: metrics.opex.permits },
+                                        { name: "Other Opex", value: metrics.opex.dot + metrics.opex.accounting + metrics.opex.office + metrics.opex.eld + metrics.opex.parking },
+                                        { name: "Transaction Fees", value: metrics.financial.transaction },
+                                        { name: "Dispatch", value: metrics.cogs.dispatchFees },
+                                    ].filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
+                                    const expConfig = { name: { label: "Category" }, value: { label: "Amount", color: "hsl(var(--chart-2))" } } satisfies ChartConfig;
+                                    return (
+                                        <ChartContainer config={expConfig} className="h-[260px] w-full">
+                                            <BarChart data={expenseCategories} margin={{ left: 12, right: 12 }}>
+                                                <XAxis dataKey="name" tickLine={false} axisLine={false} angle={-35} textAnchor="end" height={70} />
+                                                <YAxis tickFormatter={(v: unknown) => `$${Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : Number(v)}`} tickLine={false} axisLine={false} width={50} />
+                                                <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                                                <Bar dataKey="value" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ChartContainer>
+                                    );
+                                })()}
                             </CardContent>
                         </Card>
                     </div>

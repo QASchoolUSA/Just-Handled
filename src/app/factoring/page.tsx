@@ -20,6 +20,12 @@ import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimes
 import type { Load } from "@/lib/types";
 import * as Papa from "papaparse";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { parseUploadedFile } from "@/lib/onboarding/parse-file";
+import type { ParsedFile } from "@/lib/onboarding/types";
+import { getMappedCell } from "@/lib/import-mapping";
+import type { ColumnMapping } from "@/lib/import-mapping";
+import { FACTORING_IMPORT_CONFIG } from "@/lib/import-configs";
+import { ImportWithMappingDialog } from "@/components/import-with-mapping-dialog";
 
 // --- Types ---
 
@@ -77,6 +83,8 @@ export default function FactoringPage() {
         variant?: "success" | "error" | "info";
     } | null>(null);
     const [isImportInfoOpen, setIsImportInfoOpen] = useState(false);
+    const [factoringImportParsed, setFactoringImportParsed] = useState<ParsedFile | null>(null);
+    const [factoringMappingDialogOpen, setFactoringMappingDialogOpen] = useState(false);
 
     // Fetch History
     useEffect(() => {
@@ -138,81 +146,86 @@ export default function FactoringPage() {
         document.body.removeChild(link);
     };
 
-    const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         setProcessing(true);
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: async (results) => {
-                try {
-                    toast({ title: "Parsing CSV...", description: "Extracting factoring data." });
-                    const rows = results.data as any[];
-
-                    const invoicesToProcess: any[] = [];
-                    const loadMappingCsv = new Map<string, string>();
-
-                    let primeFee = 0;
-                    let wireFee = 0;
-                    let totalScheduleAmount = 0;
-
-                    for (const row of rows) {
-                        const invId = row['Invoice Number']?.trim();
-                        const loadNum = row['Load Number']?.trim();
-                        if (!invId) continue;
-
-                        if (loadNum) loadMappingCsv.set(invId, loadNum);
-
-                        const amount = parseFloat(row['Invoice Amount']) || 0;
-                        const advance = parseFloat(row['Advance Amount']) || 0;
-                        const fee = parseFloat(row['Transaction Fee']) || 0;
-
-                        // Parse global fees from any row that includes them
-                        const rowPrime = parseFloat(row['Prime Surcharge']) || 0;
-                        const rowWire = parseFloat(row['Wire Fee']) || 0;
-                        if (rowPrime > 0) primeFee += rowPrime;
-                        if (rowWire > 0) wireFee += rowWire;
-
-                        invoicesToProcess.push({
-                            invoiceId: invId,
-                            date: row['Invoice Date']?.trim() || new Date().toLocaleDateString(),
-                            amount,
-                            reserve: amount - advance - fee, // Calculate derived reserve manually
-                            fee,
-                            advance, // Pass raw advance
-                            brokerName: row['Broker Name']?.trim() || undefined,
-                        });
-                        totalScheduleAmount += amount;
-                    }
-
-                    if (invoicesToProcess.length === 0) {
-                        throw new Error("No valid invoices found in CSV. Missing 'Invoice Number'.");
-                    }
-
-                    await buildPreviewData(invoicesToProcess, loadMappingCsv, primeFee, wireFee, totalScheduleAmount);
-                    if (e.target) e.target.value = ''; // Reset input
-                } catch (error: any) {
-                    setImportInfo({
-                        title: "CSV Error",
-                        description: error.message,
-                        variant: "error",
-                    });
-                    setIsImportInfoOpen(true);
-                    setProcessing(false);
-                }
-            },
-            error: (err) => {
-                setImportInfo({
-                    title: "Parse Error",
-                    description: "Failed to read CSV file.",
-                    variant: "error",
-                });
+        try {
+            const parsed = await parseUploadedFile(file);
+            if (parsed.rows.length === 0) {
+                setImportInfo({ title: "No data", description: "No rows found in the file.", variant: "error" });
                 setIsImportInfoOpen(true);
-                setProcessing(false);
+                return;
             }
-        });
+            setFactoringImportParsed(parsed);
+            setFactoringMappingDialogOpen(true);
+        } catch (err: any) {
+            setImportInfo({
+                title: "Parse Error",
+                description: err?.message ?? "Failed to parse file.",
+                variant: "error",
+            });
+            setIsImportInfoOpen(true);
+        } finally {
+            setProcessing(false);
+            if (e.target) e.target.value = "";
+        }
+    };
+
+    const runFactoringImportWithMapping = async (mapping: ColumnMapping) => {
+        if (!factoringImportParsed) return;
+        const { headers, rows } = factoringImportParsed;
+        const get = (row: Record<string, unknown>, fieldId: string) =>
+            getMappedCell(row, fieldId, mapping, headers);
+        const str = (v: unknown) => (v != null ? String(v).trim() : "");
+        const num = (v: unknown) => (v != null && v !== "" ? parseFloat(String(v).replace(/[$,\s]/g, "")) || 0 : 0);
+
+        const invoicesToProcess: any[] = [];
+        const loadMappingCsv = new Map<string, string>();
+        let primeFee = 0;
+        let wireFee = 0;
+        let totalScheduleAmount = 0;
+
+        for (const row of rows) {
+            const r = row as Record<string, unknown>;
+            const invId = str(get(r, "invoiceNumber"));
+            if (!invId) continue;
+            const loadNum = str(get(r, "loadNumber"));
+            if (loadNum) loadMappingCsv.set(invId, loadNum);
+
+            const amount = num(get(r, "invoiceAmount"));
+            const advance = num(get(r, "advanceAmount"));
+            const fee = num(get(r, "transactionFee"));
+            const rowPrime = num(get(r, "primeSurcharge"));
+            const rowWire = num(get(r, "wireFee"));
+            if (rowPrime > 0) primeFee += rowPrime;
+            if (rowWire > 0) wireFee += rowWire;
+
+            invoicesToProcess.push({
+                invoiceId: invId,
+                date: str(get(r, "invoiceDate")) || new Date().toLocaleDateString(),
+                amount,
+                reserve: amount - advance - fee,
+                fee,
+                advance,
+                brokerName: str(get(r, "brokerName")) || undefined,
+            });
+            totalScheduleAmount += amount;
+        }
+
+        if (invoicesToProcess.length === 0) {
+            setImportInfo({
+                title: "CSV Error",
+                description: "No valid invoices found. Map 'Invoice Number' to a column with data.",
+                variant: "error",
+            });
+            setIsImportInfoOpen(true);
+            setFactoringImportParsed(null);
+            return;
+        }
+
+        setFactoringImportParsed(null);
+        await buildPreviewData(invoicesToProcess, loadMappingCsv, primeFee, wireFee, totalScheduleAmount);
     };
 
     // Shared generic function for building the UI from either PDF OR CSV Array!
@@ -350,7 +363,7 @@ export default function FactoringPage() {
                         updateData.brokerName = record.brokerName.trim();
                     }
 
-                    currentBatch.update(loadRef, updateData);
+                    currentBatch.update(loadRef, updateData as Record<string, import("firebase/firestore").FieldValue | string | number>);
                 });
 
                 await currentBatch.commit();
@@ -395,6 +408,23 @@ export default function FactoringPage() {
 
     return (
         <div className="p-6 space-y-8 max-w-6xl mx-auto pb-24">
+            <ImportWithMappingDialog
+                open={factoringMappingDialogOpen}
+                onOpenChange={setFactoringMappingDialogOpen}
+                parsed={factoringImportParsed}
+                config={FACTORING_IMPORT_CONFIG}
+                title="Map factoring columns"
+                description="Match each field to a column in your file. Invoice Number is required."
+                onConfirm={async (mapping) => {
+                    setProcessing(true);
+                    try {
+                        await runFactoringImportWithMapping(mapping);
+                    } finally {
+                        setProcessing(false);
+                    }
+                }}
+            />
+
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold tracking-tight">Factoring Integration</h1>
                 <p className="text-muted-foreground">Import Factoring advances via scheduled Template CSV to accurately prorate factoring costs per load.</p>
@@ -427,7 +457,7 @@ export default function FactoringPage() {
                                         {processing ? "Parsing CSV..." : "Select Import CSV"}
                                         <input
                                             type="file"
-                                            accept=".csv"
+                                            accept=".csv,.xlsx,.xls"
                                             className="absolute inset-0 opacity-0 cursor-pointer"
                                             onChange={handleCsvUpload}
                                         />

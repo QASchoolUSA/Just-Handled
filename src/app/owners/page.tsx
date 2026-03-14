@@ -29,6 +29,12 @@ import { addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocki
 import Papa from 'papaparse';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { parseUploadedFile } from '@/lib/onboarding/parse-file';
+import type { ParsedFile } from '@/lib/onboarding/types';
+import { getMappedCell } from '@/lib/import-mapping';
+import type { ColumnMapping } from '@/lib/import-mapping';
+import { OWNER_IMPORT_CONFIG } from '@/lib/import-configs';
+import { ImportWithMappingDialog } from '@/components/import-with-mapping-dialog';
 
 export default function OwnersPage() {
     const firestore = useFirestore();
@@ -47,6 +53,8 @@ export default function OwnersPage() {
     const [isImportResultOpen, setIsImportResultOpen] = useState(false);
     const [importResult, setImportResult] = useState<{ success: number; errors: any[] } | null>(null);
     const [isImporting, setIsImporting] = useState(false);
+    const [importParsed, setImportParsed] = useState<ParsedFile | null>(null);
+    const [importMappingDialogOpen, setImportMappingDialogOpen] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
     const unitIdToDriverName = React.useMemo(() => {
@@ -126,84 +134,73 @@ export default function OwnersPage() {
         fileInputRef.current?.click();
     };
 
-    const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
         setIsImporting(true);
         setImportResult(null);
-
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: async (results) => {
-                if (results.data && firestore && ownersCollection) {
-                    const importedOwners = results.data as any[];
-                    let successCount = 0;
-                    const errors: any[] = [];
-
-                    try {
-                        await Promise.all(importedOwners.map(async (row, i) => {
-                            const rowNumber = i + 2;
-                            if (!row['Name'] && !row['name']) {
-                                if (Object.values(row).some(v => !!v)) {
-                                    errors.push({ row: rowNumber, reason: 'Missing Name', data: row });
-                                }
-                                return;
-                            }
-
-                            try {
-                                const percentage = parseFloat(row['Percentage (e.g. 0.88)']) || 0;
-                                const fuelRebate = parseFloat(row['Fuel Rebate (e.g. 0.5 for 50%)'] || row['Fuel Rebate (Weekly)'] || row['fuel rebate']) || 0;
-                                const insurance = parseFloat(row['Insurance (Weekly)']) || 0;
-                                const escrow = parseFloat(row['Escrow (Weekly)']) || 0;
-                                const eld = parseFloat(row['ELD']) || 0;
-                                const adminFee = parseFloat(row['Admin Fee']) || 0;
-                                const fuel = parseFloat(row['Fuel']) || 0;
-                                const tolls = parseFloat(row['Tolls']) || 0;
-
-                                const newOwner = {
-                                    name: row['Name'] || row['name'],
-                                    unitId: row['Unit ID'] || row['unit id'] || '',
-                                    percentage,
-                                    fuelRebate,
-                                    recurringDeductions: {
-                                        insurance,
-                                        escrow,
-                                        eld,
-                                        adminFee,
-                                        fuel,
-                                        tolls,
-                                    },
-                                    recurringAdditions: {},
-                                };
-
-                                await addDocumentNonBlocking(ownersCollection, newOwner);
-                                successCount++;
-                            } catch (err: any) {
-                                errors.push({ row: rowNumber, reason: err.message, data: row });
-                            }
-                        }));
-
-                        setImportResult({ success: successCount, errors });
-                        setIsImportResultOpen(true);
-                    } catch (err: any) {
-                        console.error("Import failed critically", err);
-                        alert("Import failed. Check console.");
-                    } finally {
-                        setIsImporting(false);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                    }
-                } else {
-                    setIsImporting(false);
-                }
-            },
-            error: (error) => {
-                console.error('Error parsing CSV:', error);
-                setIsImporting(false);
-                alert('Error parsing CSV file. Please check the format.');
+        try {
+            const parsed = await parseUploadedFile(file);
+            if (parsed.rows.length === 0) {
+                alert('No data rows found in the file.');
+                return;
             }
-        });
+            setImportParsed(parsed);
+            setImportMappingDialogOpen(true);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Failed to parse file.');
+        } finally {
+            setIsImporting(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const runOwnerImportWithMapping = async (mapping: ColumnMapping) => {
+        if (!importParsed || !firestore || !ownersCollection) return;
+        const { headers, rows } = importParsed;
+        const get = (row: Record<string, unknown>, fieldId: string) => getMappedCell(row, fieldId, mapping, headers);
+        const num = (v: unknown) => (v != null && v !== '' ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
+        let successCount = 0;
+        const errors: any[] = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i] as Record<string, unknown>;
+            const rowNumber = i + 2;
+            const nameVal = get(row, 'name');
+            const name = nameVal != null ? String(nameVal).trim() : '';
+            if (!name) {
+                if (Object.values(row).some(v => v != null && String(v).trim() !== '')) {
+                    errors.push({ row: rowNumber, reason: 'Missing Name', data: row });
+                }
+                continue;
+            }
+            try {
+                let percentage = num(get(row, 'percentage'));
+                if (percentage > 1) percentage = percentage / 100;
+                const newOwner = {
+                    name,
+                    unitId: get(row, 'unitId') != null ? String(get(row, 'unitId')).trim() : '',
+                    percentage,
+                    fuelRebate: num(get(row, 'fuelRebate')),
+                    recurringDeductions: {
+                        insurance: num(get(row, 'insurance')),
+                        escrow: num(get(row, 'escrow')),
+                        eld: num(get(row, 'eld')),
+                        adminFee: num(get(row, 'adminFee')),
+                        fuel: num(get(row, 'fuel')),
+                        tolls: num(get(row, 'tolls')),
+                    },
+                    recurringAdditions: {},
+                };
+                await addDocumentNonBlocking(ownersCollection, newOwner);
+                successCount++;
+            } catch (err: any) {
+                errors.push({ row: rowNumber, reason: err?.message ?? 'Failed to save', data: row });
+            }
+        }
+        setImportResult({ success: successCount, errors });
+        setIsImportResultOpen(true);
+        setImportParsed(null);
     };
 
     const handleFormSave = async (ownerData: Omit<Owner, 'id' | 'recurringDeductions' | 'recurringAdditions'> & { insurance: number; escrow: number; eld: number; adminFee: number; fuel: number; tolls: number }) => {
@@ -259,7 +256,7 @@ export default function OwnersPage() {
                 <div className="flex items-center gap-3">
                     <input
                         type="file"
-                        accept=".csv"
+                        accept=".csv,.xlsx,.xls"
                         className="hidden"
                         ref={fileInputRef}
                         onChange={handleImportFile}
@@ -269,13 +266,30 @@ export default function OwnersPage() {
                     </Button>
                     <Button variant="outline" onClick={handleImportClick} className="rounded-xl" disabled={isImporting}>
                         {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                        {isImporting ? 'Importing...' : 'Import CSV'}
+                        {isImporting ? 'Importing...' : 'Import CSV/Excel'}
                     </Button>
                     <Button onClick={handleAddOwner} className="rounded-xl shadow-sm hover:shadow-md transition-all">
                         <PlusCircle className="mr-2 h-4 w-4" /> Add Owner
                     </Button>
                 </div>
             </div>
+
+            <ImportWithMappingDialog
+                open={importMappingDialogOpen}
+                onOpenChange={setImportMappingDialogOpen}
+                parsed={importParsed}
+                config={OWNER_IMPORT_CONFIG}
+                title="Map owner columns"
+                description="Match each field to a column in your file. Name is required."
+                onConfirm={async (mapping) => {
+                    setIsImporting(true);
+                    try {
+                        await runOwnerImportWithMapping(mapping);
+                    } finally {
+                        setIsImporting(false);
+                    }
+                }}
+            />
 
             {/* Error Display */}
             {error && (

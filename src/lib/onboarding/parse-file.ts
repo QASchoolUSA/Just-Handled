@@ -60,10 +60,10 @@ function parseExcel(file: File): Promise<ParsedFile> {
           return;
         }
         const ws = wb.Sheets[firstSheet];
-        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
+        const raw = XLSX.utils.sheet_to_json(ws, {
           header: 1,
           defval: '',
-        }) as (string | number | null)[][];
+        }) as unknown as (string | number | null)[][];
         if (raw.length === 0) {
           resolve({ headers: [], rows: [], fileName: file.name });
           return;
