@@ -163,3 +163,62 @@ export const FACTORING_IMPORT_CONFIG: ImportMappingConfig = {
     wireFee: 'Wire Fee',
   },
 };
+
+export const BALANCE_SHEET_IMPORT_CONFIG: ImportMappingConfig = {
+  systemFields: [
+    // Assets
+    "cash",
+    "arUnfactored",
+    "factoredReceivables",
+    "factoredReserve",
+    "fuelAdvances",
+    "prepaid",
+    "trucks",
+    "trailers",
+    "otherEquipment",
+    "accumDep",
+    "securityDeposits",
+    "iftaCredits",
+    // Liabilities
+    "ap",
+    "creditCards",
+    "accrued",
+    "payrollTaxes",
+    "fuelCards",
+    "factoringAdvance",
+    "truckLoans",
+    "otherLTDebt",
+    // Equity
+    "ownersCapital",
+    "retainedEarnings",
+  ],
+  // Minimal required fields; retainedEarnings can be auto-balanced.
+  requiredFields: ["cash", "ap", "ownersCapital"],
+  fieldLabels: {
+    // Assets
+    cash: "Cash",
+    arUnfactored: "Accounts Receivable (Unfactored)",
+    factoredReceivables: "Factored Receivables",
+    factoredReserve: "Factored Receivables (Reserve)",
+    fuelAdvances: "Fuel Advances",
+    prepaid: "Prepaid Expenses",
+    trucks: "Trucks (cost)",
+    trailers: "Trailers (cost)",
+    otherEquipment: "Other Equipment (cost)",
+    accumDep: "Accumulated Depreciation",
+    securityDeposits: "Security Deposits",
+    iftaCredits: "IFTA Credits / Refunds Receivable",
+    // Liabilities
+    ap: "Accounts Payable",
+    creditCards: "Credit Cards",
+    accrued: "Accrued Expenses",
+    payrollTaxes: "Payroll & Payroll Taxes Payable",
+    fuelCards: "Fuel Cards Payable",
+    factoringAdvance: "Factoring Advance Liability",
+    truckLoans: "Truck Loans / Leases Payable",
+    otherLTDebt: "Other Long-Term Debt",
+    // Equity
+    ownersCapital: "Owner’s Capital / Paid-In Capital",
+    retainedEarnings: "Retained Earnings",
+  },
+};

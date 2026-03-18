@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, subMonths, startOfDay, endOfDay } from "date-fns";
 import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
-import { collection, query, where } from "firebase/firestore";
+import { collection, query, where, doc, getDoc } from "firebase/firestore";
 import type { DateRange } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
@@ -12,11 +12,25 @@ import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
 import { computeProfitLossMetrics } from "@/lib/financial/compute-profit-loss";
+import type { BalanceSheetSnapshot } from "@/lib/balance-sheet/balance-sheet-types";
+import { computeBalancedRetainedEarnings, computeBalanceSheet } from "@/lib/balance-sheet/compute-balance-sheet";
+import { EMPTY_BALANCE_SHEET_SNAPSHOT } from "@/lib/balance-sheet/balance-sheet-types";
+import type { ParsedFile } from "@/lib/onboarding/types";
+import { parseUploadedFile } from "@/lib/onboarding/parse-file";
+import { getMappedCell, type ColumnMapping } from "@/lib/import-mapping";
+import { ImportWithMappingDialog } from "@/components/import-with-mapping-dialog";
+import { BALANCE_SHEET_IMPORT_CONFIG } from "@/lib/import-configs";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { serverTimestamp, setDoc } from "firebase/firestore";
+import { Upload } from "lucide-react";
 
 type Line = {
   key: string;
@@ -71,6 +85,122 @@ export default function BalanceSheetPage() {
     to: endOfDay(new Date()),
   });
   const [activePreset, setActivePreset] = useState<string>("1M");
+
+  const asOfDate = useMemo(() => {
+    if (!dateRange?.to) return null;
+    return format(dateRange.to, "yyyy-MM-dd");
+  }, [dateRange?.to]);
+
+  const [balanceSnapshot, setBalanceSnapshot] = useState<BalanceSheetSnapshot | null>(null);
+  const [snapshotLoadError, setSnapshotLoadError] = useState<string | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const { toast } = useToast();
+  const [isSavingSnapshot, setIsSavingSnapshot] = useState(false);
+  const [draftSnapshot, setDraftSnapshot] = useState<BalanceSheetSnapshot>(EMPTY_BALANCE_SHEET_SNAPSHOT);
+
+  const [balanceImportParsed, setBalanceImportParsed] = useState<ParsedFile | null>(null);
+  const [balanceMappingDialogOpen, setBalanceMappingDialogOpen] = useState(false);
+  const [isImportingBalance, setIsImportingBalance] = useState(false);
+  const balanceFileInputRef = useRef<HTMLInputElement>(null);
+
+  const openEditDialog = () => {
+    setDraftSnapshot(balanceSnapshot ? { ...balanceSnapshot } : { ...EMPTY_BALANCE_SHEET_SNAPSHOT });
+    setIsEditOpen(true);
+  };
+
+  const handleBalanceImportClick = () => {
+    balanceFileInputRef.current?.click();
+  };
+
+  const handleBalanceFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsImportingBalance(true);
+      const parsed = await parseUploadedFile(file);
+      if (parsed.rows.length === 0) {
+        toast({ title: "No rows found", description: "The uploaded file has no data rows.", variant: "destructive" });
+        return;
+      }
+      setBalanceImportParsed(parsed);
+      setBalanceMappingDialogOpen(true);
+    } catch (err: any) {
+      toast({
+        title: "Import failed",
+        description: err?.message || "Unable to parse the file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImportingBalance(false);
+      if (balanceFileInputRef.current) balanceFileInputRef.current.value = "";
+    }
+  };
+
+  const runBalanceSheetImportWithMapping = async (mapping: ColumnMapping): Promise<boolean> => {
+    if (!firestore || !companyId || !asOfDate || !balanceImportParsed || typeof netProfit !== "number") return false;
+    const { headers, rows } = balanceImportParsed;
+
+    // We expect the file to contain a single snapshot row; if multiple rows exist, import the first one.
+    const row = rows[0] as Record<string, unknown>;
+
+    const num = (v: unknown) => {
+      if (v == null || v === "") return 0;
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+      const cleaned = String(v).replace(/[$,\\s]/g, "").trim();
+      const n = parseFloat(cleaned);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const nextSnapshot: BalanceSheetSnapshot = {
+      ...EMPTY_BALANCE_SHEET_SNAPSHOT,
+      // Assets
+      cash: num(getMappedCell(row, "cash", mapping, headers)),
+      arUnfactored: num(getMappedCell(row, "arUnfactored", mapping, headers)),
+      factoredReceivables: num(getMappedCell(row, "factoredReceivables", mapping, headers)),
+      factoredReserve: num(getMappedCell(row, "factoredReserve", mapping, headers)),
+      fuelAdvances: num(getMappedCell(row, "fuelAdvances", mapping, headers)),
+      prepaid: num(getMappedCell(row, "prepaid", mapping, headers)),
+      trucks: num(getMappedCell(row, "trucks", mapping, headers)),
+      trailers: num(getMappedCell(row, "trailers", mapping, headers)),
+      otherEquipment: num(getMappedCell(row, "otherEquipment", mapping, headers)),
+      accumDep: num(getMappedCell(row, "accumDep", mapping, headers)),
+      securityDeposits: num(getMappedCell(row, "securityDeposits", mapping, headers)),
+      iftaCredits: num(getMappedCell(row, "iftaCredits", mapping, headers)),
+      // Liabilities
+      ap: num(getMappedCell(row, "ap", mapping, headers)),
+      creditCards: num(getMappedCell(row, "creditCards", mapping, headers)),
+      accrued: num(getMappedCell(row, "accrued", mapping, headers)),
+      payrollTaxes: num(getMappedCell(row, "payrollTaxes", mapping, headers)),
+      fuelCards: num(getMappedCell(row, "fuelCards", mapping, headers)),
+      factoringAdvance: num(getMappedCell(row, "factoringAdvance", mapping, headers)),
+      truckLoans: num(getMappedCell(row, "truckLoans", mapping, headers)),
+      otherLTDebt: num(getMappedCell(row, "otherLTDebt", mapping, headers)),
+      // Equity
+      ownersCapital: num(getMappedCell(row, "ownersCapital", mapping, headers)),
+      retainedEarnings: num(getMappedCell(row, "retainedEarnings", mapping, headers)),
+    };
+
+    // Enforce equation automatically for imports too.
+    const balancedRetained = computeBalancedRetainedEarnings({
+      snapshot: nextSnapshot,
+      currentPeriodNetIncome: netProfit,
+    });
+
+    nextSnapshot.retainedEarnings = balancedRetained;
+
+    const snapRef = doc(firestore, `companies/${companyId}/balanceSheetSnapshots/${asOfDate}`);
+    await setDoc(
+      snapRef,
+      {
+        ...nextSnapshot,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    setBalanceSnapshot(nextSnapshot);
+    return true;
+  };
 
   const presets = [
     { label: "1 Month", value: "1M", months: 1 },
@@ -164,9 +294,61 @@ export default function BalanceSheetPage() {
 
   const asOfLabel = dateRange?.to ? format(dateRange.to, "MMMM dd, yyyy") : "—";
 
+  // Load persisted snapshot for this "as-of" date.
+  useEffect(() => {
+    if (!firestore || !companyId || !asOfDate) {
+      setBalanceSnapshot(null);
+      setSnapshotLoadError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setSnapshotLoadError(null);
+        const snapRef = doc(firestore, `companies/${companyId}/balanceSheetSnapshots/${asOfDate}`);
+        const snap = await getDoc(snapRef);
+        if (cancelled) return;
+
+        if (!snap.exists()) {
+          setBalanceSnapshot(null);
+          return;
+        }
+
+        const data = snap.data() as Partial<BalanceSheetSnapshot> | undefined;
+        setBalanceSnapshot({
+          ...EMPTY_BALANCE_SHEET_SNAPSHOT,
+          ...(data || {}),
+        } as BalanceSheetSnapshot);
+      } catch (err: any) {
+        if (cancelled) return;
+        setSnapshotLoadError(err?.message || "Failed to load balance sheet data.");
+        setBalanceSnapshot(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, companyId, asOfDate]);
+
+  const computed = useMemo(() => {
+    if (!balanceSnapshot || netProfit === null) return null;
+    return computeBalanceSheet(balanceSnapshot, netProfit);
+  }, [balanceSnapshot, netProfit]);
+
   const equityLines: Line[] = [
-    { key: "ownersCapital", label: "Owner’s Capital / Paid-In Capital", value: null },
-    { key: "retainedEarnings", label: "Retained Earnings", value: null },
+    {
+      key: "ownersCapital",
+      label: "Owner’s Capital / Paid-In Capital",
+      value: computed ? computed.ownersCapital : null,
+    },
+    {
+      key: "retainedEarnings",
+      label: "Retained Earnings",
+      value: computed ? computed.retainedEarnings : null,
+    },
     {
       key: "currentPeriodNetIncome",
       label: "Current Period Net Income",
@@ -174,7 +356,7 @@ export default function BalanceSheetPage() {
       isEmphasis: true,
       isNegative: true,
     },
-    { key: "totalEquity", label: "Total Equity", value: null, isTotal: true },
+    { key: "totalEquity", label: "Total Equity", value: computed ? computed.totalEquity : null, isTotal: true },
   ];
 
   return (
@@ -244,11 +426,81 @@ export default function BalanceSheetPage() {
       ) : (
         <Card className="overflow-hidden">
           <CardHeader className="border-b bg-muted/30">
-            <CardTitle className="text-base">
-              {companyName || "Company"} — Balance Sheet (With Factoring)
-            </CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">
+                {companyName || "Company"} — Balance Sheet (With Factoring)
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  ref={balanceFileInputRef}
+                  onChange={handleBalanceFileChange}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBalanceImportClick}
+                  disabled={isImportingBalance}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import
+                </Button>
+                <Button variant="outline" size="sm" onClick={openEditDialog}>
+                  Edit Balance Sheet Data
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-6 space-y-8">
+            {snapshotLoadError && (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center justify-between gap-3">
+                <span>{snapshotLoadError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Balance Sheet Calculators</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="border-border/50">
+                  <CardContent className="p-4 pt-3">
+                    <div className="text-sm font-medium text-muted-foreground">Net Worth</div>
+                    <div className="mt-2 text-2xl font-bold">{computed ? formatCurrency(computed.netWorth) : "—"}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Assets − Liabilities</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50">
+                  <CardContent className="p-4 pt-3">
+                    <div className="text-sm font-medium text-muted-foreground">Debt-to-Equity</div>
+                    <div className="mt-2 text-2xl font-bold">
+                      {computed && computed.debtToEquity != null ? computed.debtToEquity.toFixed(2) : "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">Debt / Equity</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50">
+                  <CardContent className="p-4 pt-3">
+                    <div className="text-sm font-medium text-muted-foreground">Working Capital</div>
+                    <div className="mt-2 text-2xl font-bold">{computed ? formatCurrency(computed.workingCapital) : "—"}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Current Assets − Current Liabilities</div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50">
+                  <CardContent className="p-4 pt-3">
+                    <div className="text-sm font-medium text-muted-foreground">Current Ratio</div>
+                    <div className="mt-2 text-2xl font-bold">
+                      {computed && computed.currentRatio != null ? computed.currentRatio.toFixed(2) : "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">Current Assets / Current Liabilities</div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
             <div className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <div>
@@ -258,13 +510,13 @@ export default function BalanceSheetPage() {
                       <div className="text-sm font-semibold">Current Assets</div>
                       <p className="text-xs text-muted-foreground mt-0.5">Cash or things that become cash within ~12 months</p>
                       <div className="mt-2 space-y-1">
-                        <BalanceRow line={{ key: "cash", label: "Cash", value: null }} />
-                        <BalanceRow line={{ key: "arUnfactored", label: "Accounts Receivable (Unfactored)", value: null }} />
-                        <BalanceRow line={{ key: "factoredReceivables", label: "Factored Receivables", value: null }} />
-                        <BalanceRow line={{ key: "factoredReserve", label: "Factored Receivables (Reserve)", value: null }} />
-                        <BalanceRow line={{ key: "fuelAdvances", label: "Fuel Advances", value: null }} />
-                        <BalanceRow line={{ key: "prepaid", label: "Prepaid Expenses", value: null }} />
-                        <BalanceRow line={{ key: "totalCurrentAssets", label: "Total Current Assets", value: null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "cash", label: "Cash", value: computed ? balanceSnapshot?.cash ?? 0 : null }} />
+                        <BalanceRow line={{ key: "arUnfactored", label: "Accounts Receivable (Unfactored)", value: computed ? balanceSnapshot?.arUnfactored ?? 0 : null }} />
+                        <BalanceRow line={{ key: "factoredReceivables", label: "Factored Receivables", value: computed ? balanceSnapshot?.factoredReceivables ?? 0 : null }} />
+                        <BalanceRow line={{ key: "factoredReserve", label: "Factored Receivables (Reserve)", value: computed ? balanceSnapshot?.factoredReserve ?? 0 : null }} />
+                        <BalanceRow line={{ key: "fuelAdvances", label: "Fuel Advances", value: computed ? balanceSnapshot?.fuelAdvances ?? 0 : null }} />
+                        <BalanceRow line={{ key: "prepaid", label: "Prepaid Expenses", value: computed ? balanceSnapshot?.prepaid ?? 0 : null }} />
+                        <BalanceRow line={{ key: "totalCurrentAssets", label: "Total Current Assets", value: computed ? computed.totalCurrentAssets : null, isSubtotal: true }} />
                       </div>
                     </div>
 
@@ -272,26 +524,26 @@ export default function BalanceSheetPage() {
                       <div className="text-sm font-semibold">Property &amp; Equipment</div>
                       <p className="text-xs text-muted-foreground mt-0.5">Your trucking equipment</p>
                       <div className="mt-2 space-y-1">
-                        <BalanceRow line={{ key: "trucks", label: "Trucks", value: null }} />
-                        <BalanceRow line={{ key: "trailers", label: "Trailers", value: null }} />
-                        <BalanceRow line={{ key: "otherEquipment", label: "Other Equipment", value: null }} />
-                        <BalanceRow line={{ key: "ppeCost", label: "Total Property & Equipment (Cost)", value: null, isSubtotal: true }} />
-                        <BalanceRow line={{ key: "accumDep", label: "Less: Accumulated Depreciation", value: null }} />
-                        <BalanceRow line={{ key: "netPpe", label: "Net Property & Equipment", value: null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "trucks", label: "Trucks", value: computed ? balanceSnapshot?.trucks ?? 0 : null }} />
+                        <BalanceRow line={{ key: "trailers", label: "Trailers", value: computed ? balanceSnapshot?.trailers ?? 0 : null }} />
+                        <BalanceRow line={{ key: "otherEquipment", label: "Other Equipment", value: computed ? balanceSnapshot?.otherEquipment ?? 0 : null }} />
+                        <BalanceRow line={{ key: "ppeCost", label: "Total Property & Equipment (Cost)", value: computed ? computed.ppeCost : null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "accumDep", label: "Less: Accumulated Depreciation", value: computed ? balanceSnapshot?.accumDep ?? 0 : null }} />
+                        <BalanceRow line={{ key: "netPpe", label: "Net Property & Equipment", value: computed ? computed.netPpe : null, isSubtotal: true }} />
                       </div>
                     </div>
 
                     <div>
                       <div className="text-sm font-semibold">Other Assets</div>
                       <div className="mt-2 space-y-1">
-                        <BalanceRow line={{ key: "securityDeposits", label: "Security Deposits", value: null }} />
-                        <BalanceRow line={{ key: "iftaCredits", label: "IFTA Credits / Refunds Receivable", value: null }} />
-                        <BalanceRow line={{ key: "totalOtherAssets", label: "Total Other Assets", value: null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "securityDeposits", label: "Security Deposits", value: computed ? balanceSnapshot?.securityDeposits ?? 0 : null }} />
+                        <BalanceRow line={{ key: "iftaCredits", label: "IFTA Credits / Refunds Receivable", value: computed ? balanceSnapshot?.iftaCredits ?? 0 : null }} />
+                        <BalanceRow line={{ key: "totalOtherAssets", label: "Total Other Assets", value: computed ? computed.totalOtherAssets : null, isSubtotal: true }} />
                       </div>
                     </div>
 
                     <div className="pt-2">
-                      <BalanceRow line={{ key: "totalAssets", label: "Total Assets", value: null, isTotal: true }} />
+                      <BalanceRow line={{ key: "totalAssets", label: "Total Assets", value: computed ? computed.totalAssets : null, isTotal: true }} />
                     </div>
                   </div>
                 </div>
@@ -307,27 +559,27 @@ export default function BalanceSheetPage() {
                       <div className="text-sm font-semibold">Current Liabilities</div>
                       <p className="text-xs text-muted-foreground mt-0.5">Due within 12 months</p>
                       <div className="mt-2 space-y-1">
-                        <BalanceRow line={{ key: "ap", label: "Accounts Payable", value: null }} />
-                        <BalanceRow line={{ key: "creditCards", label: "Credit Cards", value: null }} />
-                        <BalanceRow line={{ key: "accrued", label: "Accrued Expenses", value: null }} />
-                        <BalanceRow line={{ key: "payrollTaxes", label: "Payroll & Payroll Taxes Payable", value: null }} />
-                        <BalanceRow line={{ key: "fuelCards", label: "Fuel Cards Payable", value: null }} />
-                        <BalanceRow line={{ key: "factoringAdvance", label: "Factoring Advance Liability", value: null }} />
-                        <BalanceRow line={{ key: "totalCurrentLiab", label: "Total Current Liabilities", value: null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "ap", label: "Accounts Payable", value: computed ? balanceSnapshot?.ap ?? 0 : null }} />
+                        <BalanceRow line={{ key: "creditCards", label: "Credit Cards", value: computed ? balanceSnapshot?.creditCards ?? 0 : null }} />
+                        <BalanceRow line={{ key: "accrued", label: "Accrued Expenses", value: computed ? balanceSnapshot?.accrued ?? 0 : null }} />
+                        <BalanceRow line={{ key: "payrollTaxes", label: "Payroll & Payroll Taxes Payable", value: computed ? balanceSnapshot?.payrollTaxes ?? 0 : null }} />
+                        <BalanceRow line={{ key: "fuelCards", label: "Fuel Cards Payable", value: computed ? balanceSnapshot?.fuelCards ?? 0 : null }} />
+                        <BalanceRow line={{ key: "factoringAdvance", label: "Factoring Advance Liability", value: computed ? balanceSnapshot?.factoringAdvance ?? 0 : null }} />
+                        <BalanceRow line={{ key: "totalCurrentLiab", label: "Total Current Liabilities", value: computed ? computed.totalCurrentLiab : null, isSubtotal: true }} />
                       </div>
                     </div>
 
                     <div>
                       <div className="text-sm font-semibold">Long-Term Liabilities</div>
                       <div className="mt-2 space-y-1">
-                        <BalanceRow line={{ key: "truckLoans", label: "Truck Loans / Leases Payable", value: null }} />
-                        <BalanceRow line={{ key: "otherLTDebt", label: "Other Long-Term Debt", value: null }} />
-                        <BalanceRow line={{ key: "totalLongTermLiab", label: "Total Long-Term Liabilities", value: null, isSubtotal: true }} />
+                        <BalanceRow line={{ key: "truckLoans", label: "Truck Loans / Leases Payable", value: computed ? balanceSnapshot?.truckLoans ?? 0 : null }} />
+                        <BalanceRow line={{ key: "otherLTDebt", label: "Other Long-Term Debt", value: computed ? balanceSnapshot?.otherLTDebt ?? 0 : null }} />
+                        <BalanceRow line={{ key: "totalLongTermLiab", label: "Total Long-Term Liabilities", value: computed ? computed.totalLongTermLiab : null, isSubtotal: true }} />
                       </div>
                     </div>
 
                     <div className="pt-1">
-                      <BalanceRow line={{ key: "totalLiabilities", label: "Total Liabilities", value: null, isTotal: true }} />
+                      <BalanceRow line={{ key: "totalLiabilities", label: "Total Liabilities", value: computed ? computed.totalLiabilities : null, isTotal: true }} />
                     </div>
 
                     <div>
@@ -341,7 +593,7 @@ export default function BalanceSheetPage() {
                     </div>
 
                     <div className="pt-2">
-                      <BalanceRow line={{ key: "totalLiabEquity", label: "Total Liabilities & Equity", value: null, isTotal: true }} />
+                      <BalanceRow line={{ key: "totalLiabEquity", label: "Total Liabilities & Equity", value: computed ? computed.totalLiabEquity : null, isTotal: true }} />
                     </div>
                   </div>
                 </div>
@@ -355,6 +607,227 @@ export default function BalanceSheetPage() {
           </CardContent>
         </Card>
       )}
+
+      <ImportWithMappingDialog
+        open={balanceMappingDialogOpen}
+        onOpenChange={(open) => {
+          setBalanceMappingDialogOpen(open);
+          if (!open) setBalanceImportParsed(null);
+        }}
+        parsed={balanceImportParsed}
+        config={BALANCE_SHEET_IMPORT_CONFIG}
+        title="Map balance sheet columns"
+        description="Match each balance sheet field to a column in your file. Cash, A/P, and Owner’s Capital are required."
+        onConfirm={async (mapping) => {
+          setIsImportingBalance(true);
+          try {
+            const ok = await runBalanceSheetImportWithMapping(mapping);
+            if (ok) {
+              toast({
+                title: "Balance sheet imported",
+                description: `Saved for as-of ${asOfDate}.`,
+              });
+            } else {
+              toast({
+                title: "Import not performed",
+                description: "Select an As-of date and ensure the required state is loaded.",
+                variant: "destructive",
+              });
+            }
+          } catch (err: any) {
+            toast({
+              title: "Import failed",
+              description: err?.message || "Unable to save balance sheet data.",
+              variant: "destructive",
+            });
+          } finally {
+            setIsImportingBalance(false);
+          }
+        }}
+      />
+
+      <Dialog
+        open={isEditOpen}
+        onOpenChange={(open) => {
+          setIsEditOpen(open);
+          if (!open) setIsSavingSnapshot(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Balance Sheet Data</DialogTitle>
+            <DialogDescription>
+              Enter leaf line items for Assets, Liabilities, and Equity for <span className="font-medium text-foreground">{asOfDate || "this date"}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* ASSETS */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Assets</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(
+                  [
+                    ["cash", "Cash"],
+                    ["arUnfactored", "Accounts Receivable (Unfactored)"],
+                    ["factoredReceivables", "Factored Receivables"],
+                    ["factoredReserve", "Factored Receivables (Reserve)"],
+                    ["fuelAdvances", "Fuel Advances"],
+                    ["prepaid", "Prepaid Expenses"],
+                    ["trucks", "Trucks (cost)"],
+                    ["trailers", "Trailers (cost)"],
+                    ["otherEquipment", "Other Equipment (cost)"],
+                    ["accumDep", "Accumulated Depreciation"],
+                    ["securityDeposits", "Security Deposits"],
+                    ["iftaCredits", "IFTA Credits / Refunds Receivable"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label htmlFor={`bs-${key}`}>{label}</Label>
+                    <Input
+                      id={`bs-${key}`}
+                      type="number"
+                      step="0.01"
+                      value={draftSnapshot[key]}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const v = raw === "" ? 0 : Number(raw);
+                        setDraftSnapshot((prev) => ({ ...prev, [key]: Number.isFinite(v) ? v : 0 }));
+                      }}
+                      className="text-right"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* LIABILITIES */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Liabilities</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(
+                  [
+                    ["ap", "Accounts Payable"],
+                    ["creditCards", "Credit Cards"],
+                    ["accrued", "Accrued Expenses"],
+                    ["payrollTaxes", "Payroll & Payroll Taxes Payable"],
+                    ["fuelCards", "Fuel Cards Payable"],
+                    ["factoringAdvance", "Factoring Advance Liability"],
+                    ["truckLoans", "Truck Loans / Leases Payable"],
+                    ["otherLTDebt", "Other Long-Term Debt"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label htmlFor={`bs-${key}`}>{label}</Label>
+                    <Input
+                      id={`bs-${key}`}
+                      type="number"
+                      step="0.01"
+                      value={draftSnapshot[key]}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const v = raw === "" ? 0 : Number(raw);
+                        setDraftSnapshot((prev) => ({ ...prev, [key]: Number.isFinite(v) ? v : 0 }));
+                      }}
+                      className="text-right"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* EQUITY */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Equity</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(
+                  [
+                    ["ownersCapital", "Owner’s Capital / Paid-In Capital"],
+                    ["retainedEarnings", "Retained Earnings"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label htmlFor={`bs-${key}`}>{label}</Label>
+                    <Input
+                      id={`bs-${key}`}
+                      type="number"
+                      step="0.01"
+                      value={draftSnapshot[key]}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const v = raw === "" ? 0 : Number(raw);
+                        setDraftSnapshot((prev) => ({ ...prev, [key]: Number.isFinite(v) ? v : 0 }));
+                      }}
+                      className="text-right"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditOpen(false)}
+              disabled={isSavingSnapshot}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                if (typeof netProfit !== "number") return;
+                const balancedRetained = computeBalancedRetainedEarnings({
+                  snapshot: draftSnapshot,
+                  currentPeriodNetIncome: netProfit,
+                });
+                setDraftSnapshot((prev) => ({ ...prev, retainedEarnings: balancedRetained }));
+                toast({
+                  title: "Auto-balance applied",
+                  description: "Retained Earnings were updated to satisfy the balance equation.",
+                });
+              }}
+              disabled={isSavingSnapshot || typeof netProfit !== "number"}
+            >
+              Auto-balance retained earnings
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!firestore || !companyId || !asOfDate) return;
+                setIsSavingSnapshot(true);
+                try {
+                  const snapRef = doc(firestore, `companies/${companyId}/balanceSheetSnapshots/${asOfDate}`);
+                  await setDoc(
+                    snapRef,
+                    {
+                      ...draftSnapshot,
+                      updatedAt: serverTimestamp(),
+                    },
+                    { merge: true }
+                  );
+                  setBalanceSnapshot({ ...draftSnapshot });
+                  setIsEditOpen(false);
+                  toast({ title: "Balance sheet saved", description: "Balance sheet data updated successfully." });
+                } catch (err: any) {
+                  toast({
+                    title: "Save failed",
+                    description: err?.message || "Unable to save balance sheet data.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsSavingSnapshot(false);
+                }
+              }}
+              disabled={isSavingSnapshot || !asOfDate}
+            >
+              {isSavingSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
