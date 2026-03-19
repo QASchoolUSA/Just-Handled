@@ -166,13 +166,21 @@ export default function OnboardingPage() {
                 onBack={() => setStep('upload')}
               />
             )}
-            {step === 'import' && normalizedRows.length > 0 && companyId && firestore && (
+            {step === 'import' && normalizedRows.length > 0 && companyId && firestore ? (
               <OnboardingImportStep
                 firestore={firestore}
                 companyId={companyId}
                 rows={normalizedRows}
                 onComplete={handleComplete}
               />
+            ) : null}
+
+            {step === 'import' && normalizedRows.length > 0 && (!companyId || !firestore) && (
+              <div className="py-6 sm:py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Preparing your workspace. If this takes longer than a few seconds, reload the page.
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>

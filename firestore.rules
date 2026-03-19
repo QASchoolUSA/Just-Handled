@@ -8,7 +8,12 @@ service cloud.firestore {
 
     // Company document: only users whose user doc has companyId == companyId
     match /companies/{companyId} {
-      allow read, write: if request.auth != null
+      // Allow initial company creation during registration, before the user doc
+      // exists / before user.companyId is written.
+      allow create: if request.auth != null;
+
+      // After bootstrapping, reads/updates are strictly scoped to the user's companyId.
+      allow read, update, delete: if request.auth != null
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
     }
 
