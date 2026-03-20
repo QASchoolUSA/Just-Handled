@@ -60,12 +60,11 @@ function parseExcel(file: File): Promise<ParsedFile> {
           return;
         }
         const ws = wb.Sheets[firstSheet];
-        // Use `raw: true` so numeric cell values are returned as the underlying
-        // numbers (avoids XLSX formatting-driven leading zeros like "0123" for 123).
+        // Keep default XLSX behavior so the imported values match the file's
+        // displayed/text content as closely as possible.
         const raw = XLSX.utils.sheet_to_json(ws, {
           header: 1,
           defval: '',
-          raw: true,
         }) as unknown as (string | number | null)[][];
         if (raw.length === 0) {
           resolve({ headers: [], rows: [], fileName: file.name });

@@ -119,7 +119,9 @@ export function normalizeRows(parsed: ParsedFile, mapping: ColumnMapping): Norma
       pickupDate,
       deliveryDate,
       customer: mapping.customer ? String(get('customer') ?? '').trim() || undefined : undefined,
-      truckId: mapping.truckId ? String(get('truckId') ?? '').trim() || undefined : undefined,
+      truckId: mapping.truckId
+        ? (String(get('truckId') ?? '').trim() || undefined)
+        : undefined,
       trailerNumber: mapping.trailerNumber ? String(get('trailerNumber') ?? '').trim() || undefined : undefined,
       pickupLocation: mapping.pickupLocation ? String(get('pickupLocation') ?? '').trim() || undefined : undefined,
       deliveryLocation: mapping.deliveryLocation ? String(get('deliveryLocation') ?? '').trim() || undefined : undefined,
