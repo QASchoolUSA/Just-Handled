@@ -114,6 +114,8 @@ export function normalizeRows(parsed: ParsedFile, mapping: ColumnMapping): Norma
     result.push({
       loadNumber,
       driverName,
+      driverEmail: mapping.driverEmail ? String(get('driverEmail') ?? '').trim() || undefined : undefined,
+      driverPhone: mapping.driverPhone ? String(get('driverPhone') ?? '').trim() || undefined : undefined,
       pickupDate,
       deliveryDate,
       customer: mapping.customer ? String(get('customer') ?? '').trim() || undefined : undefined,

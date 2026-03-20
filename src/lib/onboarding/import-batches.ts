@@ -60,17 +60,28 @@ export async function runOnboardingImport(
   let driversCreated = 0;
   let loadsCreated = 0;
 
-  const uniqueDrivers = new Map<string, { driverName: string; truckId: string; payType?: 'percentage' | 'cpm'; rate?: number }>();
+  const uniqueDrivers = new Map<string, {
+    driverName: string;
+    truckId: string;
+    driverEmail?: string;
+    driverPhone?: string;
+    payType?: 'percentage' | 'cpm';
+    rate?: number;
+  }>();
   for (const r of rows) {
     const key = driverKey(r.driverName, r.truckId ?? '');
     if (!uniqueDrivers.has(key)) {
       uniqueDrivers.set(key, {
         driverName: r.driverName,
         truckId: r.truckId ?? '',
+        ...(r.driverEmail ? { driverEmail: r.driverEmail } : {}),
+        ...(r.driverPhone ? { driverPhone: r.driverPhone } : {}),
         ...(r.payType != null && r.rate != null ? { payType: r.payType, rate: r.rate } : {}),
       });
     } else {
       const cur = uniqueDrivers.get(key)!;
+      if (!cur.driverEmail && r.driverEmail) cur.driverEmail = r.driverEmail;
+      if (!cur.driverPhone && r.driverPhone) cur.driverPhone = r.driverPhone;
       if ((cur.payType == null || cur.rate == null) && r.payType != null && r.rate != null) {
         cur.payType = r.payType;
         cur.rate = r.rate;
@@ -107,13 +118,15 @@ export async function runOnboardingImport(
   for (let i = 0; i < driversToCreate.length; i += BATCH_SIZE) {
     const chunk = driversToCreate.slice(i, i + BATCH_SIZE);
     const batch = writeBatch(firestore);
-    for (const [key, { driverName, truckId, payType, rate }] of chunk) {
+    for (const [key, { driverName, truckId, driverEmail, driverPhone, payType, rate }] of chunk) {
       const { firstName, lastName } = nameToFirstLast(driverName);
       const docRef = doc(driversCollection);
       const base: Record<string, unknown> = {
         firstName: firstName || 'Unknown',
         lastName: lastName || '',
         unitId: truckId || '',
+        ...(driverEmail ? { email: String(driverEmail).trim() } : {}),
+        ...(driverPhone ? { phoneNumber: String(driverPhone).trim() } : {}),
         status: 'active',
         recurringDeductions: {
           insurance: 0,
@@ -154,11 +167,15 @@ export async function runOnboardingImport(
   const driverPayUpdates = Array.from(uniqueDrivers.entries()).filter(
     ([key]) => existingByKey.has(key)
   );
-  for (const [key, { payType, rate }] of driverPayUpdates) {
-    if (payType == null || rate == null) continue;
+  for (const [key, { payType, rate, driverEmail, driverPhone }] of driverPayUpdates) {
+    if (payType == null && rate == null && !driverEmail && !driverPhone) continue;
     const driverId = driverIdByKey.get(key);
     if (!driverId) continue;
-    await updateDoc(doc(driversCollection, driverId), { payType, rate });
+    await updateDoc(doc(driversCollection, driverId), {
+      ...(payType != null && rate != null ? { payType, rate } : {}),
+      ...(driverEmail ? { email: String(driverEmail).trim() } : {}),
+      ...(driverPhone ? { phoneNumber: String(driverPhone).trim() } : {}),
+    });
   }
 
   /** Within this import, consider duplicate only if load number AND customer/broker match (same load # with different broker = separate loads). */

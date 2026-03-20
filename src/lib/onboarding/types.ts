@@ -3,6 +3,8 @@ export const ONBOARDING_SYSTEM_FIELDS = [
   'loadNumber',
   'customer',
   'driver',
+  'driverEmail',
+  'driverPhone',
   'truckId',
   'trailerNumber',
   'pickupLocation',
@@ -24,6 +26,8 @@ export const SYSTEM_FIELD_LABELS: Record<OnboardingSystemField, string> = {
   loadNumber: 'Load #',
   customer: 'Customer',
   driver: 'Driver',
+  driverEmail: 'Driver Email',
+  driverPhone: 'Driver Phone',
   truckId: 'Truck / Unit ID',
   trailerNumber: 'Trailer ID',
   pickupLocation: 'Pickup Location',
@@ -60,6 +64,8 @@ export type NormalizedRow = {
   loadNumber: string;
   customer?: string;
   driverName: string;
+  driverEmail?: string;
+  driverPhone?: string;
   truckId?: string;
   trailerNumber?: string;
   pickupLocation?: string;
