@@ -91,10 +91,25 @@ export function ImportWithMappingDialog({
                   <Select
                     value={mapping[fieldId] ?? SENTINEL_NONE}
                     onValueChange={(v) =>
-                      setMapping((prev) => ({
-                        ...prev,
-                        [fieldId]: v === SENTINEL_NONE || v === '' ? undefined : v,
-                      }))
+                      setMapping((prev) => {
+                        const next: ColumnMapping = { ...prev };
+                        const selected = v === SENTINEL_NONE || v === '' ? undefined : v;
+                        next[fieldId] = selected;
+
+                        // Enforce uniqueness across all system fields:
+                        // if the selected column is already assigned to another field,
+                        // clear it there so the triggers don't show duplicates.
+                        if (selected) {
+                          for (const otherFieldId of config.systemFields) {
+                            if (otherFieldId === fieldId) continue;
+                            if (next[otherFieldId] === selected) {
+                              next[otherFieldId] = undefined;
+                            }
+                          }
+                        }
+
+                        return next;
+                      })
                     }
                   >
                     <SelectTrigger className="w-full">
