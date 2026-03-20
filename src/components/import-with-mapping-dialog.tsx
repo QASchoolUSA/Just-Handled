@@ -11,13 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
 import type { ParsedFile } from '@/lib/onboarding/types';
 import type { ColumnMapping, ImportMappingConfig } from '@/lib/import-mapping';
 import { canImportWithMapping, SENTINEL_NONE } from '@/lib/import-mapping';
@@ -51,6 +46,118 @@ export function ImportWithMappingDialog({
     // `mapping` stores only actual mapped column ids (not SENTINEL_NONE), so we can safely use its values.
     return new Set(Object.values(mapping).filter((v): v is string => typeof v === 'string' && v.trim() !== ''));
   }, [mapping]);
+
+  const getOptionValue = (header: string, i: number) => {
+    return header === '' || header == null ? `__empty_${i}__` : header;
+  };
+
+  const getOptionLabel = (header: string, i: number) => {
+    return header === '' || header == null ? `(Column ${i + 1})` : header;
+  };
+
+  function ColumnPicker({
+    headers,
+    value,
+    onChange,
+  }: {
+    headers: string[];
+    value: string | undefined;
+    onChange: (next: string | undefined) => void;
+  }) {
+    const [query, setQuery] = React.useState('');
+
+    const currentValue = value ?? undefined;
+    React.useEffect(() => {
+      setQuery('');
+    }, [currentValue]);
+
+    const selectedIdx = currentValue
+      ? headers.findIndex((h, i) => getOptionValue(String(h ?? ''), i) === currentValue)
+      : -1;
+    const selectedLabel =
+      selectedIdx >= 0
+        ? getOptionLabel(String(headers[selectedIdx] ?? ''), selectedIdx)
+        : currentValue;
+
+    const available = React.useMemo(() => {
+      return headers
+        .map((h, i) => {
+          const raw = String(h ?? '');
+          const v = getOptionValue(raw, i);
+          return { raw, index: i, value: v, label: getOptionLabel(raw, i) };
+        })
+        .filter((opt) => {
+          // Exclude values taken by other fields.
+          if (takenColumns.has(opt.value) && opt.value !== currentValue) return false;
+          return true;
+        });
+    }, [headers, takenColumns, currentValue]);
+
+    const filtered = React.useMemo(() => {
+      const q = query.trim().toLowerCase();
+      if (!q) return available;
+      return available.filter((opt) => opt.label.toLowerCase().includes(q));
+    }, [available, query]);
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-start h-9 font-normal text-left"
+            type="button"
+          >
+            {currentValue ? <span className="truncate" title={selectedLabel}>{selectedLabel}</span> : (
+              <span className="text-muted-foreground">Select column…</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[520px] max-w-[85vw] p-3">
+          <div className="space-y-3">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search columns…"
+              className="h-9"
+            />
+            <div className="max-h-[260px] overflow-auto border rounded-md">
+              <div className="p-1">
+                <button
+                  type="button"
+                  className="w-full text-left px-2 py-2 rounded hover:bg-muted/50"
+                  onClick={() => onChange(undefined)}
+                >
+                  Don&apos;t map
+                </button>
+              </div>
+              <div className="border-t" />
+              <div className="p-1">
+                {filtered.length === 0 ? (
+                  <div className="px-2 py-2 text-sm text-muted-foreground">No matching columns.</div>
+                ) : (
+                  filtered.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className="w-full text-left px-2 py-2 rounded hover:bg-muted/50"
+                      onClick={() => onChange(opt.value)}
+                    >
+                      <span className="truncate block" title={opt.label}>
+                        {opt.label}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Showing {filtered.length} available column{filtered.length === 1 ? '' : 's'}.
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   const canImport = useMemo(
     () => parsed != null && canImportWithMapping(parsed, mapping, config),
@@ -88,48 +195,25 @@ export function ImportWithMappingDialog({
                       <span className="text-destructive" aria-label="Required">*</span>
                     )}
                   </Label>
-                  <Select
-                    value={mapping[fieldId] ?? SENTINEL_NONE}
-                    onValueChange={(v) =>
+                  <ColumnPicker
+                    headers={parsed.headers}
+                    value={mapping[fieldId]}
+                    onChange={(nextValue) => {
                       setMapping((prev) => {
                         const next: ColumnMapping = { ...prev };
-                        const selected = v === SENTINEL_NONE || v === '' ? undefined : v;
-                        next[fieldId] = selected;
+                        next[fieldId] = nextValue;
 
-                        // Enforce uniqueness across all system fields:
-                        // if the selected column is already assigned to another field,
-                        // clear it there so the triggers don't show duplicates.
-                        if (selected) {
+                        if (nextValue) {
                           for (const otherFieldId of config.systemFields) {
                             if (otherFieldId === fieldId) continue;
-                            if (next[otherFieldId] === selected) {
-                              next[otherFieldId] = undefined;
-                            }
+                            if (next[otherFieldId] === nextValue) next[otherFieldId] = undefined;
                           }
                         }
 
                         return next;
-                      })
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select column…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={SENTINEL_NONE}>Don&apos;t map</SelectItem>
-                      {parsed.headers.map((h, i) => {
-                        const value = h === '' || h == null ? `__empty_${i}__` : h;
-                        const currentValue = mapping[fieldId] ?? SENTINEL_NONE;
-                        const isTakenByAnotherField = takenColumns.has(value) && value !== currentValue;
-                        if (isTakenByAnotherField) return null;
-                        return (
-                          <SelectItem key={value} value={value}>
-                            {h === '' || h == null ? `(Column ${i + 1})` : h}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                      });
+                    }}
+                  />
                 </div>
               ))}
             </div>
