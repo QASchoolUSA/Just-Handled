@@ -69,6 +69,15 @@ export default function DriversPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  const getDriverEmail = (driver: Driver) =>
+    ((driver as Driver & { emailAddress?: string }).email ||
+      (driver as Driver & { emailAddress?: string }).emailAddress ||
+      '') as string;
+  const getDriverPhone = (driver: Driver) =>
+    ((driver as Driver & { phone?: string }).phoneNumber ||
+      (driver as Driver & { phone?: string }).phone ||
+      '') as string;
+
   type Period = '7d' | '30d' | '90d' | '180d' | '365d' | 'custom';
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('30d');
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
@@ -204,9 +213,10 @@ export default function DriversPage() {
       filtered = drivers.filter(driver => {
         const fullName = `${driver.firstName} ${driver.lastName}`.toLowerCase();
         const unitId = driver.unitId?.toLowerCase() || '';
-        const email = driver.email?.toLowerCase() || '';
+        const email = getDriverEmail(driver).toLowerCase();
+        const phone = getDriverPhone(driver).toLowerCase();
 
-        return fullName.includes(query) || unitId.includes(query) || email.includes(query);
+        return fullName.includes(query) || unitId.includes(query) || email.includes(query) || phone.includes(query);
       });
     }
 
@@ -594,7 +604,7 @@ export default function DriversPage() {
                         </Avatar>
                         <div className="flex flex-col">
                           <span className="font-medium">{toTitleCase(`${driver.firstName} ${driver.lastName}`)}</span>
-                          <span className="text-xs text-muted-foreground font-normal">{driver.email}</span>
+                          <span className="text-xs text-muted-foreground font-normal">{getDriverEmail(driver) || '—'}</span>
                         </div>
                       </div>
                     </TableCell>
@@ -617,7 +627,7 @@ export default function DriversPage() {
                         })()}
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(driver.phoneNumber) || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatPhoneNumber(getDriverPhone(driver)) || '-'}</TableCell>
                     <TableCell>
                       <div className="font-medium">
                         {driver.payType != null && driver.rate != null

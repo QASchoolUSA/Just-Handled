@@ -20,8 +20,8 @@ import type { ServiceAccount } from "firebase-admin";
 const serviceAccount = require("../service-account-key.json") as ServiceAccount & { project_id?: string };
 
 // --- CONFIGURE THESE VALUES AS NEEDED ---
-const TARGET_EMAIL = "info@justhandled.com";
-const TARGET_COMPANY_ID = "ihkM0XzUisH5VpwCqMJl";
+const TARGET_EMAIL = "qaschoolusa@gmail.com";
+const TARGET_COMPANY_ID = "emvfE5NoIYpyBuLRzutj";
 const DEFAULT_ROLE = "admin";
 // ----------------------------------------
 

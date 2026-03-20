@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, subMonths, startOfDay, endOfDay } from "date-fns";
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, FileDown, Loader2 } from "lucide-react";
 import { collection, query, where, doc, getDoc } from "firebase/firestore";
 import type { DateRange } from "react-day-picker";
 
@@ -20,6 +20,7 @@ import { parseUploadedFile } from "@/lib/onboarding/parse-file";
 import { getMappedCell, type ColumnMapping } from "@/lib/import-mapping";
 import { ImportWithMappingDialog } from "@/components/import-with-mapping-dialog";
 import { BALANCE_SHEET_IMPORT_CONFIG } from "@/lib/import-configs";
+import { exportBalanceSheetPdf } from "@/lib/exports/statement-pdf-exports";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -358,6 +359,14 @@ export default function BalanceSheetPage() {
     },
     { key: "totalEquity", label: "Total Equity", value: computed ? computed.totalEquity : null, isTotal: true },
   ];
+  const handleExportPdf = () => {
+    if (!computed || !dateRange?.to) return;
+    exportBalanceSheetPdf({
+      companyName,
+      asOf: dateRange.to,
+      computed,
+    });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
@@ -431,6 +440,10 @@ export default function BalanceSheetPage() {
                 {companyName || "Company"} — Balance Sheet (With Factoring)
               </CardTitle>
               <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={!computed || !dateRange?.to}>
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Export PDF
+                </Button>
                 <input
                   type="file"
                   accept=".csv,.xlsx,.xls"

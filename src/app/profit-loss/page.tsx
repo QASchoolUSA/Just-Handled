@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { format, subMonths, startOfDay, endOfDay } from "date-fns";
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, FileDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -26,10 +26,11 @@ import type { Load, Expense, Driver, Owner } from "@/lib/types";
 import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import { DateRange } from "react-day-picker";
 import { computeProfitLossMetrics } from "@/lib/financial/compute-profit-loss";
+import { exportProfitLossPdf } from "@/lib/exports/statement-pdf-exports";
 
 export default function ProfitLossPage() {
     const firestore = useFirestore();
-    const { companyId } = useCompany();
+    const { companyId, companyName } = useCompany();
 
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: startOfDay(subMonths(new Date(), 1)),
@@ -128,6 +129,15 @@ export default function ProfitLossPage() {
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
     const formatPercent = (val: number) => `${val.toFixed(2)}%`;
+    const handleExportPdf = () => {
+        if (!metrics || !dateRange?.from || !dateRange?.to) return;
+        exportProfitLossPdf({
+            companyName,
+            from: dateRange.from,
+            to: dateRange.to,
+            metrics,
+        });
+    };
 
     return (
         <div className="p-6 space-y-8 max-w-5xl mx-auto">
@@ -138,6 +148,10 @@ export default function ProfitLossPage() {
                         <h1 className="text-3xl font-bold tracking-tight">Profit & Loss Statement</h1>
                         <p className="text-muted-foreground">{drivers?.length || 0} Drivers • {filteredLoads.length} Loads</p>
                     </div>
+                    <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={!metrics || !dateRange?.from || !dateRange?.to}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Export PDF
+                    </Button>
 
                     <div className="flex items-center gap-2 bg-muted/20 p-1 rounded-lg border">
                         {presets.map(preset => (

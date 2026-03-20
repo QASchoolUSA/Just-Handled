@@ -81,6 +81,15 @@ export async function runOnboardingImport(
   const driversCollection = collection(firestore, `companies/${companyId}/drivers`);
   const loadsCollection = collection(firestore, `companies/${companyId}/loads`);
 
+  // Keep a "best available" pay setup per name so merge does not drop payType/rate
+  // when canonical driver id is picked from latest load.
+  const payByName = new Map<string, { payType: 'percentage' | 'cpm'; rate: number }>();
+  for (const [, v] of uniqueDrivers) {
+    if (v.payType != null && v.rate != null) {
+      payByName.set(nameOnlyKey(v.driverName), { payType: v.payType, rate: v.rate });
+    }
+  }
+
   const existingDriversSnap = await getDocs(driversCollection);
   const existingByKey = new Map<string, Driver & { id: string }>();
   existingDriversSnap.forEach((d) => {
@@ -159,6 +168,18 @@ export async function runOnboardingImport(
   }
   const seenLoadKeys = new Set<string>();
 
+  // Also dedupe against already existing loads in this company to avoid inflating revenue
+  // when onboarding/import is accidentally run multiple times with the same file.
+  const existingLoadsSnap = await getDocs(loadsCollection);
+  const existingLoadKeys = new Set<string>();
+  existingLoadsSnap.forEach((d) => {
+    const l = d.data() as Partial<Load>;
+    const loadNumber = (l.loadNumber ?? '').trim();
+    if (!loadNumber) return;
+    const broker = (l.brokerName ?? '').trim().toLowerCase();
+    existingLoadKeys.add(`${loadNumber}::${broker}`);
+  });
+
   const totalLoadBatches = Math.ceil(rows.length / BATCH_SIZE) || 1;
   batchStartMs = Date.now();
 
@@ -174,6 +195,7 @@ export async function runOnboardingImport(
       }
       const dedupKey = loadDedupKey(row);
       if (seenLoadKeys.has(dedupKey)) continue; // skip only when same load # and same broker in this file
+      if (existingLoadKeys.has(dedupKey)) continue; // skip if already imported previously
       seenLoadKeys.add(dedupKey);
 
       const loadRef = doc(loadsCollection);
@@ -200,6 +222,7 @@ export async function runOnboardingImport(
       if (row.extraStops != null) (loadData as Load).extraStops = row.extraStops;
       batch.set(loadRef, loadData);
       loadsCreated++;
+      existingLoadKeys.add(dedupKey);
     }
     await batch.commit();
     const elapsed = Date.now() - batchStartMs;
@@ -235,6 +258,19 @@ export async function runOnboardingImport(
     ...(d.data() as Load),
     id: d.id,
   }));
+  const latestDriversSnap = await getDocs(driversCollection);
+  const driverDocById = new Map<string, (Driver & { id: string })>();
+  latestDriversSnap.forEach((d) => {
+    driverDocById.set(d.id, { ...(d.data() as Driver), id: d.id });
+  });
+
+  const pickNonEmpty = (values: Array<unknown>): string | undefined => {
+    for (const v of values) {
+      const s = String(v ?? '').trim();
+      if (s) return s;
+    }
+    return undefined;
+  };
   const names = Array.from(nameToDriverIds.keys());
   for (let n = 0; n < names.length; n++) {
     const name = names[n];
@@ -259,6 +295,9 @@ export async function runOnboardingImport(
     const canonicalId = latestLoad.driverId;
     const unitId = latestLoad.truckId || '';
     const unitHistory = [...new Set(allLoads.map((l) => l.truckId).filter(Boolean))];
+    const mergedEmail = pickNonEmpty(driverIds.map((id) => driverDocById.get(id)?.email));
+    const mergedPhone = pickNonEmpty(driverIds.map((id) => driverDocById.get(id)?.phoneNumber));
+
     if (driverIds.length > 1) {
       const toReassign = allLoads.filter((l) => l.driverId !== canonicalId);
       for (const load of toReassign) {
@@ -269,6 +308,14 @@ export async function runOnboardingImport(
       }
     }
     await updateDoc(doc(driversCollection, canonicalId), {
+      ...(payByName.has(name)
+        ? {
+            payType: payByName.get(name)!.payType,
+            rate: payByName.get(name)!.rate,
+          }
+        : {}),
+      ...(mergedEmail ? { email: mergedEmail } : {}),
+      ...(mergedPhone ? { phoneNumber: mergedPhone } : {}),
       unitId,
       unitHistory,
     });
