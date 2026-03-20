@@ -116,7 +116,7 @@ export function OnboardingMappingStep({
                       </Button>
                     </PopoverTrigger>
 
-                    <PopoverContent className="w-[520px] max-w-[85vw] p-3">
+                    <PopoverContent className="w-[360px] max-w-[92vw] p-2">
                       <div className="space-y-3">
                         <Input
                           value={query}
@@ -125,7 +125,7 @@ export function OnboardingMappingStep({
                           className="h-9"
                         />
 
-                        <div className="max-h-[260px] overflow-auto border rounded-md">
+                        <div className="max-h-[200px] overflow-auto border rounded-md">
                           <div className="p-1">
                             <button
                               type="button"
