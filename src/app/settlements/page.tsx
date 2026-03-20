@@ -31,6 +31,9 @@ import type { Load, Driver, Expense, AccountSettings, Owner, SettlementSummary, 
 // import { generateSettlementPDF } from '@/lib/exports/pdf-exports'; // Dynamic import used instead
 import { LS_KEYS, DEFAULT_ACCOUNTS } from '@/lib/constants';
 import { formatCurrency, downloadCsv, parseNumber, normalizeDateFormat, toTitleCase, calculateDriverPay } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SETTLEMENTS_BATCH_PDF_CONFIRM_THRESHOLD, SETTLEMENTS_EXPENSES_BATCH_COMMIT_SIZE } from '@/lib/app-constants';
 import { exportInvoicesAsCsv, exportJournalAsCsv } from '@/lib/exports/csv-exports';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { useCompany } from '@/firebase/provider';
@@ -105,6 +108,7 @@ const TABLE_COLUMNS = [
 export default function SettlementsPage() {
   const firestore = useFirestore();
   const { companyId } = useCompany();
+  const { toast } = useToast();
 
   // Format dates for Firestore query (YYYY-MM-DD)
   // We use state for selectedWeek, so these need to be derived from that
@@ -183,11 +187,19 @@ export default function SettlementsPage() {
         setSelectedWeek(startOfWeek(deliveryDate, { weekStartsOn: 1 }));
         setActiveTab('loads');
       } else {
-        alert(`Load #${searchQuery.trim()} not found in any period.`);
+        toast({
+          title: "Load not found",
+          description: `Load #${searchQuery.trim()} was not found in any period.`,
+          variant: "destructive",
+        });
       }
     } catch (e: any) {
       console.error('Global search error:', e);
-      alert('Error searching for load: ' + (e.message || String(e)));
+      toast({
+        title: "Search failed",
+        description: e?.message || "Error searching for load.",
+        variant: "destructive",
+      });
     } finally {
       setIsSearchingGlobal(false);
     }
@@ -294,6 +306,27 @@ export default function SettlementsPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImportResultOpen, setIsImportResultOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [activeImportKind, setActiveImportKind] = useState<'loads' | 'expenses' | null>(null);
+
+  // Generic confirmation dialog controller (replaces window.confirm).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState('');
+  const [confirmDescription, setConfirmDescription] = useState<React.ReactNode>(null);
+  const [confirmTone, setConfirmTone] = useState<'default' | 'destructive'>('default');
+  const confirmActionRef = React.useRef<(() => void | Promise<void>) | null>(null);
+
+  const requestConfirm = (opts: {
+    title: string;
+    description?: React.ReactNode;
+    tone?: 'default' | 'destructive';
+    onConfirm: () => void | Promise<void>;
+  }) => {
+    setConfirmTone(opts.tone ?? 'default');
+    confirmActionRef.current = opts.onConfirm;
+    setConfirmTitle(opts.title);
+    setConfirmDescription(opts.description ?? null);
+    setConfirmOpen(true);
+  };
   const [loadImportParsed, setLoadImportParsed] = useState<ParsedFile | null>(null);
   const [loadMappingDialogOpen, setLoadMappingDialogOpen] = useState(false);
   const [expenseImportParsed, setExpenseImportParsed] = useState<ParsedFile | null>(null);
@@ -352,9 +385,16 @@ export default function SettlementsPage() {
         - If 'Updated 0 loads' after migrating, the format is tricky.
         `;
 
-      alert(filterMsg);
+      toast({
+        title: "Migration analysis",
+        description: <pre className="whitespace-pre-wrap text-sm">{filterMsg}</pre>,
+      });
     } catch (e) {
-      alert('Analysis failed: ' + e);
+      toast({
+        title: "Analysis failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
     }
   };
 
@@ -369,9 +409,14 @@ export default function SettlementsPage() {
     setIsLoadFormOpen(true);
   };
   const handleDeleteLoad = async (loadId: string) => {
-    if (firestore && companyId && confirm('Are you sure you want to delete this load?')) {
-      deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/loads`, loadId));
-    }
+    if (!firestore || !companyId) return;
+    requestConfirm({
+      title: "Delete load?",
+      description: "This will permanently delete the selected load.",
+      tone: "destructive",
+      onConfirm: () =>
+        deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/loads`, loadId)),
+    });
   };
   const handleSaveLoad = async (loadData: Omit<Load, 'id'>) => {
     // This is a temporary setup. File upload logic will replace this.
@@ -412,9 +457,14 @@ export default function SettlementsPage() {
     setIsExpenseFormOpen(true);
   };
   const handleDeleteExpense = async (expenseId: string) => {
-    if (firestore && companyId && confirm('Are you sure you want to delete this expense?')) {
-      deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/expenses`, expenseId));
-    }
+    if (!firestore || !companyId) return;
+    requestConfirm({
+      title: "Delete expense?",
+      description: "This will permanently delete the selected expense record.",
+      tone: "destructive",
+      onConfirm: () =>
+        deleteDocumentNonBlocking(doc(firestore, `companies/${companyId}/expenses`, expenseId)),
+    });
   };
   const handleSaveExpense = async (expenseData: Omit<Expense, 'id'>) => {
     if (!firestore || !expensesCollectionRef || !companyId) return;
@@ -524,13 +574,21 @@ export default function SettlementsPage() {
     try {
       const parsed = await parseUploadedFile(file);
       if (parsed.rows.length === 0) {
-        alert('No data rows found in the file.');
+        toast({
+          title: "No rows found",
+          description: "The uploaded file has no data rows.",
+          variant: "destructive",
+        });
         return;
       }
       setLoadImportParsed(parsed);
       setLoadMappingDialogOpen(true);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to parse file.');
+      toast({
+        title: "Import failed",
+        description: err instanceof Error ? err.message : "Failed to parse file.",
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
       if (loadFileInputRef.current) loadFileInputRef.current.value = '';
@@ -666,13 +724,21 @@ export default function SettlementsPage() {
     try {
       const parsed = await parseUploadedFile(file);
       if (parsed.rows.length === 0) {
-        alert('No data rows found in the file.');
+        toast({
+          title: "No rows found",
+          description: "The uploaded file has no data rows.",
+          variant: "destructive",
+        });
         return;
       }
       setExpenseImportParsed(parsed);
       setExpenseMappingDialogOpen(true);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to parse file.');
+      toast({
+        title: "Import failed",
+        description: err instanceof Error ? err.message : "Failed to parse file.",
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
       if (expenseFileInputRef.current) expenseFileInputRef.current.value = '';
@@ -775,7 +841,7 @@ export default function SettlementsPage() {
       existingSignatures.add(signature);
       batchCount++;
       successCount++;
-      if (batchCount >= 500) {
+      if (batchCount >= SETTLEMENTS_EXPENSES_BATCH_COMMIT_SIZE) {
         await batch.commit();
         batch = writeBatch(firestore);
         batchCount = 0;
@@ -793,27 +859,58 @@ export default function SettlementsPage() {
       generateSettlementPDF(summary, start, end);
     } catch (error) {
       console.error('Failed to load PDF generator:', error);
-      alert('Failed to generate PDF. Please try again.');
+      toast({
+        title: "PDF export failed",
+        description: "Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleDownloadBatch = async () => {
     if (settlementSummary.length === 0 && ownerSettlementSummary.length === 0) {
-      alert("No statements to download.");
+      toast({
+        title: "Nothing to download",
+        description: "No statements are available for the selected week.",
+        variant: "destructive",
+      });
       return;
     }
 
     // Combine both lists
     const allSummaries = [...settlementSummary, ...ownerSettlementSummary];
 
-    if (allSummaries.length > 50 && !confirm(`About to generate ${allSummaries.length} PDFs. This might take a moment. Continue?`)) return;
+    if (allSummaries.length > SETTLEMENTS_BATCH_PDF_CONFIRM_THRESHOLD) {
+      requestConfirm({
+        title: "Download many PDFs?",
+        description: `About to generate ${allSummaries.length} PDFs. This might take a moment.`,
+        onConfirm: async () => {
+          try {
+            const { generateBatchZip } = await import('@/lib/exports/pdf-exports');
+            await generateBatchZip(allSummaries, weekStart, weekEnd);
+          } catch (error) {
+            console.error('Batch download failed:', error);
+            toast({
+              title: "Batch export failed",
+              description: "Failed to generate the batch archive.",
+              variant: "destructive",
+            });
+          }
+        },
+      });
+      return;
+    }
 
     try {
       const { generateBatchZip } = await import('@/lib/exports/pdf-exports');
       await generateBatchZip(allSummaries, weekStart, weekEnd);
     } catch (error) {
       console.error('Batch download failed:', error);
-      alert('Failed to generate batch archive.');
+      toast({
+        title: "Batch export failed",
+        description: "Failed to generate the batch archive.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1404,6 +1501,7 @@ export default function SettlementsPage() {
         title="Map load columns"
         description="Match each field to a column in your file. Load # and Driver Name are required."
         onConfirm={async (mapping) => {
+          setActiveImportKind('loads');
           setIsImporting(true);
           try {
             await runLoadImportWithMapping(mapping);
@@ -1421,6 +1519,7 @@ export default function SettlementsPage() {
         title="Map expense columns"
         description="Match each field to a column in your file. Description and Amount are required."
         onConfirm={async (mapping) => {
+          setActiveImportKind('expenses');
           setIsImporting(true);
           try {
             await runExpenseImportWithMapping(mapping);
@@ -1450,11 +1549,29 @@ export default function SettlementsPage() {
           <div className="space-y-4 py-4">
             <div className="flex flex-col gap-2">
               <div className="p-4 rounded-lg bg-green-50 border border-green-100 text-green-700">
-                <span className="font-semibold">{importResult?.successCount || 0}</span> loads imported successfully.
+                {(() => {
+                  const kind = activeImportKind ?? 'loads';
+                  const entity = kind === 'expenses' ? 'expense' : 'load';
+                  const count = importResult?.successCount || 0;
+                  return (
+                    <>
+                      <span className="font-semibold">{count}</span> {entity}
+                      {count !== 1 ? 's' : ''} imported successfully.
+                    </>
+                  );
+                })()}
               </div>
               {importResult?.skippedCount !== undefined && importResult.skippedCount > 0 && (
                 <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-100 text-yellow-700">
-                  <span className="font-semibold">{importResult.skippedCount}</span> duplicate loads skipped (already exist).
+                  {(() => {
+                    const kind = activeImportKind ?? 'loads';
+                    const entity = kind === 'expenses' ? 'expense' : 'load';
+                    return (
+                      <>
+                        <span className="font-semibold">{importResult.skippedCount}</span> duplicate {entity}s skipped (already exist).
+                      </>
+                    );
+                  })()}
                 </div>
               )}
               {importResult?.errors && importResult.errors.length > 0 && (
@@ -1484,6 +1601,21 @@ export default function SettlementsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={confirmTitle}
+        description={confirmDescription}
+        tone={confirmTone}
+        confirmText="Confirm"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          const fn = confirmActionRef.current;
+          confirmActionRef.current = null;
+          if (fn) await fn();
+        }}
+      />
     </div>
   );
 }

@@ -181,8 +181,7 @@ export const generateBatchZip = async (
         });
 
         if (count === 0) {
-            alert("No settlements to download.");
-            return;
+            throw new Error("No settlements to download.");
         }
 
         // Generate Zip Blob
@@ -199,6 +198,6 @@ export const generateBatchZip = async (
 
     } catch (e) {
         console.error("Batch download failed:", e);
-        alert("Failed to generate batch archive.");
+        throw e instanceof Error ? e : new Error("Failed to generate batch archive.");
     }
 };

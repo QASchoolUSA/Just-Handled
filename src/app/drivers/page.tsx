@@ -49,10 +49,13 @@ import { getMappedCell } from '@/lib/import-mapping';
 import type { ColumnMapping } from '@/lib/import-mapping';
 import { DRIVER_IMPORT_CONFIG } from '@/lib/import-configs';
 import { ImportWithMappingDialog } from '@/components/import-with-mapping-dialog';
+import { DRIVER_EARNINGS_CHART_TOP_N } from '@/lib/app-constants';
+import { useToast } from '@/hooks/use-toast';
 
 export default function DriversPage() {
   const firestore = useFirestore();
   const { companyId } = useCompany();
+  const { toast } = useToast();
   const driversCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/drivers`) : null, [firestore, companyId]);
   // IMPORTANT: We now destructure 'error' to show it.
   const { data: drivers, loading, error } = useCollection<Driver>(driversCollection);
@@ -268,13 +271,21 @@ export default function DriversPage() {
     try {
       const parsed = await parseUploadedFile(file);
       if (parsed.rows.length === 0) {
-        alert('No data rows found in the file.');
+        toast({
+          title: "No rows found",
+          description: "The uploaded file has no data rows.",
+          variant: "destructive",
+        });
         return;
       }
       setImportParsed(parsed);
       setImportMappingDialogOpen(true);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to parse file.');
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Failed to parse file.",
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -448,20 +459,24 @@ export default function DriversPage() {
       setIsFormOpen(false);
     } catch (error) {
       console.error('Error saving driver:', error);
-      alert('Failed to save driver.');
+      toast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : "Failed to save driver.",
+        variant: "destructive",
+      });
     }
   };
 
 
   const chartGrossData = useMemo(() => {
-    return [...driverEarnings].sort((a, b) => b.grossPay - a.grossPay).slice(0, 12).map(r => ({
+    return [...driverEarnings].sort((a, b) => b.grossPay - a.grossPay).slice(0, DRIVER_EARNINGS_CHART_TOP_N).map(r => ({
       name: r.driverName,
       grossPay: Math.round(r.grossPay * 100) / 100,
     }));
   }, [driverEarnings]);
 
   const chartLoadsData = useMemo(() => {
-    return [...driverEarnings].sort((a, b) => b.loadCount - a.loadCount).slice(0, 12).map(r => ({
+    return [...driverEarnings].sort((a, b) => b.loadCount - a.loadCount).slice(0, DRIVER_EARNINGS_CHART_TOP_N).map(r => ({
       name: r.driverName,
       loads: r.loadCount,
     }));

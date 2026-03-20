@@ -34,10 +34,13 @@ import { getMappedCell } from '@/lib/import-mapping';
 import type { ColumnMapping } from '@/lib/import-mapping';
 import { OWNER_IMPORT_CONFIG } from '@/lib/import-configs';
 import { ImportWithMappingDialog } from '@/components/import-with-mapping-dialog';
+import { useToast } from '@/hooks/use-toast';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function OwnersPage() {
     const firestore = useFirestore();
     const { companyId } = useCompany();
+    const { toast } = useToast();
     const ownersCollection = useMemoFirebase(() => firestore && companyId ? collection(firestore, `companies/${companyId}/owners`) : null, [firestore, companyId]);
     const { data: owners, loading: ownersLoading, error: ownersError } = useCollection<Owner>(ownersCollection);
 
@@ -55,6 +58,26 @@ export default function OwnersPage() {
     const [importParsed, setImportParsed] = useState<ParsedFile | null>(null);
     const [importMappingDialogOpen, setImportMappingDialogOpen] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+    // Generic confirmation dialog (replaces window.confirm).
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [confirmTitle, setConfirmTitle] = useState("");
+    const [confirmDescription, setConfirmDescription] = useState<React.ReactNode>(null);
+    const [confirmTone, setConfirmTone] = useState<"default" | "destructive">("default");
+    const confirmActionRef = useRef<(() => void | Promise<void>) | null>(null);
+
+    const requestConfirm = (opts: {
+        title: string;
+        description?: React.ReactNode;
+        tone?: "default" | "destructive";
+        onConfirm: () => void | Promise<void>;
+    }) => {
+        confirmActionRef.current = opts.onConfirm;
+        setConfirmTone(opts.tone ?? "default");
+        setConfirmTitle(opts.title);
+        setConfirmDescription(opts.description ?? null);
+        setConfirmOpen(true);
+    };
 
     const unitIdToDriverName = React.useMemo(() => {
         const map = new Map<string, string>();
@@ -104,10 +127,16 @@ export default function OwnersPage() {
     };
 
     const handleDeleteOwner = async (ownerId: string) => {
-        if (firestore && companyId && confirm('Are you sure you want to delete this owner?')) {
-            const ownerDoc = doc(firestore, `companies/${companyId}/owners`, ownerId);
-            deleteDocumentNonBlocking(ownerDoc);
-        }
+        if (!firestore || !companyId) return;
+        requestConfirm({
+            title: "Delete owner?",
+            description: "This will permanently delete the selected owner record.",
+            tone: "destructive",
+            onConfirm: () => {
+                const ownerDoc = doc(firestore, `companies/${companyId}/owners`, ownerId);
+                deleteDocumentNonBlocking(ownerDoc);
+            },
+        });
     };
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,13 +153,21 @@ export default function OwnersPage() {
         try {
             const parsed = await parseUploadedFile(file);
             if (parsed.rows.length === 0) {
-                alert('No data rows found in the file.');
+                toast({
+                    title: "No rows found",
+                    description: "The uploaded file has no data rows.",
+                    variant: "destructive",
+                });
                 return;
             }
             setImportParsed(parsed);
             setImportMappingDialogOpen(true);
         } catch (e) {
-            alert(e instanceof Error ? e.message : 'Failed to parse file.');
+            toast({
+                title: "Import failed",
+                description: e instanceof Error ? e.message : "Failed to parse file.",
+                variant: "destructive",
+            });
         } finally {
             setIsImporting(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -448,6 +485,21 @@ export default function OwnersPage() {
                     )}
                 </DialogContent>
             </Dialog>
+
+            <ConfirmDialog
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title={confirmTitle}
+                description={confirmDescription}
+                tone={confirmTone}
+                confirmText="Confirm"
+                cancelText="Cancel"
+                onConfirm={async () => {
+                    const fn = confirmActionRef.current;
+                    confirmActionRef.current = null;
+                    if (fn) await fn();
+                }}
+            />
 
             <BlockingLoadingModal isOpen={isImporting} title="Importing Owners..." />
         </div>

@@ -48,19 +48,28 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+async function asyncPool<T>(limit: number, items: T[], iteratorFn: (item: T) => Promise<void>): Promise<void> {
+  const executing = new Set<Promise<void>>();
+  for (const item of items) {
+    const p = iteratorFn(item).finally(() => {
+      executing.delete(p);
+    });
+    executing.add(p);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+}
+
 async function deleteDocTree(docRef: FirebaseFirestore.DocumentReference) {
   // Recursively delete all docs in all nested subcollections.
   const subcollections = await docRef.listCollections();
   for (const sub of subcollections) {
     const snap = await sub.get();
-    for (const d of snap.docs) {
-      await deleteDocTree(d.ref);
-    }
-    // After nested docs are removed, delete the remaining docs in this level.
-    // (They will already be gone for deeper paths, but .delete() is safe to retry.)
-    for (const d of snap.docs) {
-      await d.ref.delete();
-    }
+    console.log(`  Deleting subcollection ${sub.path} (${snap.size} docs)`);
+    // Delete docs in parallel with a small concurrency to speed up large trees.
+    await asyncPool(5, snap.docs, (d) => deleteDocTree(d.ref));
   }
   await docRef.delete();
 }

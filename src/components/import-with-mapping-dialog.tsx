@@ -47,6 +47,11 @@ export function ImportWithMappingDialog({
 }: ImportWithMappingDialogProps) {
   const [mapping, setMapping] = useState<ColumnMapping>({});
 
+  const takenColumns = useMemo(() => {
+    // `mapping` stores only actual mapped column ids (not SENTINEL_NONE), so we can safely use its values.
+    return new Set(Object.values(mapping).filter((v): v is string => typeof v === 'string' && v.trim() !== ''));
+  }, [mapping]);
+
   const canImport = useMemo(
     () => parsed != null && canImportWithMapping(parsed, mapping, config),
     [parsed, mapping, config]
@@ -99,6 +104,9 @@ export function ImportWithMappingDialog({
                       <SelectItem value={SENTINEL_NONE}>Don&apos;t map</SelectItem>
                       {parsed.headers.map((h, i) => {
                         const value = h === '' || h == null ? `__empty_${i}__` : h;
+                        const currentValue = mapping[fieldId] ?? SENTINEL_NONE;
+                        const isTakenByAnotherField = takenColumns.has(value) && value !== currentValue;
+                        if (isTakenByAnotherField) return null;
                         return (
                           <SelectItem key={value} value={value}>
                             {h === '' || h == null ? `(Column ${i + 1})` : h}

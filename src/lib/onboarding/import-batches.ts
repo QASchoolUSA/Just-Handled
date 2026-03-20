@@ -9,8 +9,9 @@ import {
 import type { Firestore } from 'firebase/firestore';
 import type { NormalizedRow } from './types';
 import type { Driver, Load } from '@/lib/types';
+import { ONBOARDING_IMPORT_BATCH_SIZE } from '@/lib/app-constants';
 
-const BATCH_SIZE = 450;
+const BATCH_SIZE = ONBOARDING_IMPORT_BATCH_SIZE;
 
 /** Key by name + truck so one driver record per (person, unit) before merge. */
 function driverKey(name: string, unitId: string) {
