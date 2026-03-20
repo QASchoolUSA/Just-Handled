@@ -116,7 +116,7 @@ export function OnboardingMappingStep({
                       </Button>
                     </PopoverTrigger>
 
-                    <PopoverContent className="w-[360px] max-w-[92vw] p-2">
+                    <PopoverContent className="w-[360px] max-w-[92vw] p-2 bg-background text-foreground border border-border/60 shadow-lg">
                       <div className="space-y-3">
                         <Input
                           value={query}
@@ -125,11 +125,11 @@ export function OnboardingMappingStep({
                           className="h-9"
                         />
 
-                        <div className="max-h-[200px] overflow-auto border rounded-md">
+                        <div className="max-h-[200px] overflow-auto bg-background border border-border/60 rounded-md">
                           <div className="p-1">
                             <button
                               type="button"
-                              className="w-full text-left px-2 py-2 rounded hover:bg-muted/50"
+                              className="w-full text-left px-2 py-2 rounded text-foreground hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               onClick={() => setFieldMapping(field, undefined)}
                             >
                               Don&apos;t map
@@ -144,7 +144,7 @@ export function OnboardingMappingStep({
                                 <button
                                   key={opt.value}
                                   type="button"
-                                  className="w-full text-left px-2 py-2 rounded hover:bg-muted/50"
+                                  className="w-full text-left px-2 py-2 rounded text-foreground hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                                   onClick={() => setFieldMapping(field, opt.value)}
                                 >
                                   <span className="truncate block" title={opt.label}>
