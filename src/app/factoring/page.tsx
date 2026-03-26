@@ -51,6 +51,8 @@ type LoadGroup = {
     totalFactoringCost: number;
     totalAdvance: number;
     totalReserveAmount: number;
+    /** (Total Invoice - Total Advance) / Total Invoice */
+    factoringPercent: number;
     /** Optional broker/shipper name from CSV. */
     brokerName?: string;
 };
@@ -62,6 +64,8 @@ type GlobalStats = {
     matchedLoadsCount: number;
     unmatchedLoadsCount: number;
     totalCost: number;
+    /** (Total Invoice - Total Advance) / Total Invoice */
+    overallFactoringPercent: number;
 };
 
 // --- Page Component ---
@@ -411,6 +415,7 @@ export default function FactoringPage() {
                     totalFactoringCost: 0,
                     totalAdvance: 0,
                     totalReserveAmount: 0,
+                    factoringPercent: 0,
                     brokerName: (inv as any).brokerName || undefined,
                 });
             }
@@ -435,6 +440,12 @@ export default function FactoringPage() {
             group.totalFactoringCost += inv.totalFactoringCost;
             group.totalAdvance += inv.advance;
             group.totalReserveAmount += inv.reserveAmount;
+
+            // Keep percent updated as we accumulate.
+            group.factoringPercent =
+                group.totalInvoiceAmount > 0
+                    ? (group.totalInvoiceAmount - group.totalAdvance) / group.totalInvoiceAmount
+                    : 0;
         }
 
         const finalPreviewData = Array.from(loadsMap.values());
@@ -446,7 +457,12 @@ export default function FactoringPage() {
             totalOtherCharges: totals.totalOtherCharges,
             matchedLoadsCount: finalPreviewData.filter(g => g.status === 'matched').length,
             unmatchedLoadsCount: finalPreviewData.filter(g => g.status === 'unmatched').length,
-            totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
+            totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0),
+            overallFactoringPercent:
+                totals.totalScheduleAmount > 0
+                    ? (totals.totalScheduleAmount - finalPreviewData.reduce((acc, curr) => acc + curr.totalAdvance, 0)) /
+                      totals.totalScheduleAmount
+                    : 0,
         });
 
         setImportInfo({
@@ -533,6 +549,11 @@ export default function FactoringPage() {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
     };
 
+    const formatPercent = (val: number) => {
+        const n = Number.isFinite(val) ? val : 0;
+        return `${(n * 100).toFixed(2)}%`;
+    };
+
     return (
         <div className="p-6 space-y-8 max-w-6xl mx-auto pb-24">
             <ImportWithMappingDialog
@@ -599,9 +620,9 @@ export default function FactoringPage() {
                                     </Button>
                                     <div className="text-sm">
                                         <span className="text-muted-foreground mr-2">Matched Loads:</span>
-                                        <span className="font-semibold text-green-600">{stats?.matchedLoadsCount}</span>
+                                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">{stats?.matchedLoadsCount}</span>
                                         <span className="text-muted-foreground ml-4 mr-2">Unmatched:</span>
-                                        <span className="font-semibold text-red-500">{stats?.unmatchedLoadsCount}</span>
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{stats?.unmatchedLoadsCount}</span>
                                     </div>
                                 </div>
                                 <Button size="lg" onClick={handleImport} disabled={uploading || stats?.matchedLoadsCount === 0}>
@@ -619,16 +640,23 @@ export default function FactoringPage() {
                                     </Card>
                                     <Card>
                                         <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Transaction Fees</CardTitle></CardHeader>
-                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalTransactionFees)}</div></CardContent>
+                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(stats.totalTransactionFees)}</div></CardContent>
                                     </Card>
                                     <Card>
                                         <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Other Charges</CardTitle></CardHeader>
-                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalOtherCharges)}</div></CardContent>
+                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(stats.totalOtherCharges)}</div></CardContent>
                                     </Card>
                                     <Card>
-                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-destructive/80">Total Factoring Cost</CardTitle></CardHeader>
-                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-destructive">{formatCurrency(stats.totalCost)}</div></CardContent>
+                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Factoring Cost</CardTitle></CardHeader>
+                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-violet-700 dark:text-violet-400">{formatCurrency(stats.totalCost)}</div></CardContent>
                                     </Card>
+                                </div>
+                            )}
+
+                            {stats && (
+                                <div className="text-sm text-muted-foreground">
+                                    Factoring % (Total Invoice − Total Advance) / Total Invoice:{" "}
+                                    <span className="font-semibold text-foreground">{formatPercent(stats.overallFactoringPercent)}</span>
                                 </div>
                             )}
 
@@ -643,7 +671,8 @@ export default function FactoringPage() {
                                             <TableHead className="min-w-[120px]">Broker Name</TableHead>
                                             <TableHead className="text-right">Total Invoice</TableHead>
                                             <TableHead className="text-right">Total Advance</TableHead>
-                                            <TableHead className="text-right text-destructive font-semibold">Total Cost</TableHead>
+                                            <TableHead className="text-right">Factoring %</TableHead>
+                                            <TableHead className="text-right text-muted-foreground font-semibold">Total Cost</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -662,10 +691,10 @@ export default function FactoringPage() {
                                                     </TableCell>
                                                     <TableCell>
                                                         {group.status === 'matched' ? (
-                                                            <CheckCircle className="h-4 w-4 text-green-500" />
+                                                            <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                                                         ) : (
                                                             <div className="flex items-center gap-2" title="Load not found in database">
-                                                                <AlertCircle className="h-4 w-4 text-red-500" />
+                                                                <AlertCircle className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                                                             </div>
                                                         )}
                                                     </TableCell>
@@ -673,14 +702,15 @@ export default function FactoringPage() {
                                                     <TableCell className="text-muted-foreground">{group.brokerName || '—'}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(group.totalInvoiceAmount)}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(group.totalAdvance)}</TableCell>
-                                                    <TableCell className="text-right font-medium text-destructive">
+                                                    <TableCell className="text-right text-muted-foreground">{formatPercent(group.factoringPercent)}</TableCell>
+                                                    <TableCell className="text-right font-medium text-violet-700 dark:text-violet-400">
                                                         {formatCurrency(group.totalFactoringCost)}
                                                     </TableCell>
                                                 </TableRow>
 
                                                 {expandedRows.has(group.loadNumber) && (
                                                     <TableRow className="bg-muted/10">
-                                                        <TableCell colSpan={7} className="p-0 border-b">
+                                                        <TableCell colSpan={8} className="p-0 border-b">
                                                             <div className="py-2 pl-24 pr-4 border-l-4 border-l-primary/30">
                                                                 <Table className="border rounded-md bg-background overflow-hidden">
                                                                     <TableHeader className="bg-muted/40">
@@ -734,7 +764,7 @@ export default function FactoringPage() {
                                     <TableHead>Date Imported</TableHead>
                                     <TableHead className="text-right">Matched Loads</TableHead>
                                     <TableHead className="text-right">Total Invoice</TableHead>
-                                    <TableHead className="text-right text-destructive font-semibold">Total Cost</TableHead>
+                                            <TableHead className="text-right text-muted-foreground font-semibold">Total Cost</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -768,7 +798,7 @@ export default function FactoringPage() {
                                                     </TableCell>
                                                     <TableCell className="text-right">{record.stats?.matchedLoadsCount || 0}</TableCell>
                                                     <TableCell className="text-right">{formatCurrency(record.stats?.totalScheduleAmount || 0)}</TableCell>
-                                                    <TableCell className="text-right font-medium text-destructive">
+                                                <TableCell className="text-right font-medium text-violet-700 dark:text-violet-400">
                                                         {formatCurrency(record.stats?.totalCost || 0)}
                                                     </TableCell>
                                                 </TableRow>
@@ -786,7 +816,7 @@ export default function FactoringPage() {
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Invoices</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Total Amount</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Advance</TableHead>
-                                                                            <TableHead className="h-9 py-1 text-xs text-right text-destructive">Factoring Cost</TableHead>
+                                                                            <TableHead className="h-9 py-1 text-xs text-right text-muted-foreground">Factoring Cost</TableHead>
                                                                         </TableRow>
                                                                     </TableHeader>
                                                                     <TableBody>
@@ -797,7 +827,7 @@ export default function FactoringPage() {
                                                                                 <TableCell className="py-2 text-sm text-right text-muted-foreground">{group.invoices?.length || 0}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(group.totalInvoiceAmount)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(group.totalAdvance)}</TableCell>
-                                                                                <TableCell className="py-2 text-sm text-right text-destructive font-medium">
+                                                                                <TableCell className="py-2 text-sm text-right text-violet-700 dark:text-violet-400 font-medium">
                                                                                     {formatCurrency(group.totalFactoringCost)}
                                                                                 </TableCell>
                                                                             </TableRow>
