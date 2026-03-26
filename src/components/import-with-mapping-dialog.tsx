@@ -177,7 +177,10 @@ export function ImportWithMappingDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    // Important: Popovers inside this dialog render via Portal.
+    // When the dialog is modal, Radix can treat portal interactions as "outside"
+    // and close the dialog before the mapping state can be reflected.
+    <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
