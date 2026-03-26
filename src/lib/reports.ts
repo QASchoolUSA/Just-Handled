@@ -58,10 +58,11 @@ export const generateJournalCSV = (
     // If they select "Last Month", they get one Journal Entry block for that month's totals.
 
     const totalRevenue = loads.reduce((sum, l) => sum + l.invoiceAmount, 0);
-    const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
+    // Option A: a single debit line to factoring fees = factoringFee + transactionFee
+    const totalFactoringCosts = loads.reduce((sum, l) => sum + (l.factoringFee || 0) + (l.transactionFee || 0), 0);
 
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringFees), Credits: '', Name: accounts.factoringCompany, Description: 'Factoring deposit' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringFees), Credits: '', Name: '', Description: 'Factoring fees' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringCosts), Credits: '', Name: accounts.factoringCompany, Description: 'Factoring deposit' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringCosts), Credits: '', Name: '', Description: 'Factoring fees' });
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Receivable', Debits: '', Credits: fmt(totalRevenue), Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
     journalNo++;
 

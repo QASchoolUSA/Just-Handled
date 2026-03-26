@@ -176,7 +176,11 @@ export default function DashboardPage() {
 
     // Use invoiceAmount since that's the actual field in your Load type
     const totalRevenue = filteredLoads.reduce((sum, load) => sum + safeParseNumber(load.invoiceAmount), 0);
-    const totalFactoringFees = filteredLoads.reduce((sum, load) => sum + safeParseNumber(load.factoringFee), 0);
+    // Factoring cost = factoringFee (other charges) + transactionFee (transaction fees)
+    const totalFactoringFees = filteredLoads.reduce(
+      (sum, load) => sum + safeParseNumber(load.factoringFee) + safeParseNumber(load.transactionFee),
+      0
+    );
     const companyExpenses = filteredExpenses.filter(e => e.type === 'company').reduce((sum, e) => sum + safeParseNumber(e.amount), 0);
 
 
@@ -234,7 +238,7 @@ export default function DashboardPage() {
       const periodLoads = loadsByPeriod.get(row.period) ?? [];
       const periodExpenses = expensesByPeriod.get(row.period) ?? [];
       const revenue = periodLoads.reduce((s, l) => s + safeParseNumber(l.invoiceAmount), 0);
-      const factoring = periodLoads.reduce((s, l) => s + safeParseNumber(l.factoringFee), 0);
+      const factoring = periodLoads.reduce((s, l) => s + safeParseNumber(l.factoringFee) + safeParseNumber(l.transactionFee), 0);
       let driverPay = 0;
       let advances = 0;
       periodLoads.forEach((load) => {

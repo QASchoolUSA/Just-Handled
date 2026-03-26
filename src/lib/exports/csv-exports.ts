@@ -32,10 +32,11 @@ export const exportJournalAsCsv = (loads: Load[], settlementSummary: SettlementS
 
     // 1. Factoring Entry
     const totalRevenue = loads.reduce((sum, l) => sum + l.invoiceAmount, 0);
-    const totalFactoringFees = loads.reduce((sum, l) => sum + l.factoringFee, 0);
+    // Option A: a single debit line to factoring fees = factoringFee + transactionFee
+    const totalFactoringCosts = loads.reduce((sum, l) => sum + (l.factoringFee || 0) + (l.transactionFee || 0), 0);
 
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringFees), Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
-    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringFees), Credits: '', Name: '', Description: 'Weekly factoring fees' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringClearing, Debits: fmt(totalRevenue - totalFactoringCosts), Credits: '', Name: accounts.factoringCompany, Description: 'Weekly factoring deposit' });
+    journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: accounts.factoringFees, Debits: fmt(totalFactoringCosts), Credits: '', Name: '', Description: 'Weekly factoring fees' });
     journalEntries.push({ JournalNo: journalNo, 'Journal Date': periodEndStr, Account: 'Accounts Receivable', Debits: '', Credits: fmt(totalRevenue), Name: accounts.factoringCompany, Description: 'To clear factored invoices' });
     journalNo++;
 

@@ -190,7 +190,7 @@ export default function ReportsPage() {
             const periodLoads = loadsByPeriod.get(row.period) ?? [];
             const revenue = periodLoads.reduce((s, l) => s + (l.invoiceAmount || 0), 0);
             const miles = periodLoads.reduce((s, l) => s + (l.miles || 0), 0);
-            const factoring = periodLoads.reduce((s, l) => s + (l.factoringFee || 0), 0);
+            const factoring = periodLoads.reduce((s, l) => s + (l.factoringFee || 0) + (l.transactionFee || 0), 0);
             const rpm = miles > 0 ? revenue / miles : 0;
             return { ...row, rpm: Math.round(rpm * 100) / 100, factoring: Math.round(factoring * 100) / 100 };
         });

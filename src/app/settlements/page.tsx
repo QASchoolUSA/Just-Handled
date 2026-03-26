@@ -101,7 +101,7 @@ const TABLE_COLUMNS = [
   { id: 'extraStops', label: 'Extra Stops' },
   { id: 'extraStopsPay', label: 'Extra Stops Pay' },
   { id: 'invoiceAmount', label: 'Invoice Amt' },
-  { id: 'totalPay', label: 'Total Pay' },
+  { id: 'totalPay', label: 'Driver Pay' },
   { id: 'advance', label: 'Advance' },
 ];
 

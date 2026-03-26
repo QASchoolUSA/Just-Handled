@@ -19,12 +19,12 @@ import { useCompany } from "@/firebase/provider";
 import { collection, getDocs, query, where, writeBatch, doc, setDoc, serverTimestamp, onSnapshot, orderBy, limit } from "firebase/firestore";
 import type { Load } from "@/lib/types";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { parseUploadedFile } from "@/lib/onboarding/parse-file";
 import type { ParsedFile } from "@/lib/onboarding/types";
 import { getMappedCell } from "@/lib/import-mapping";
 import type { ColumnMapping } from "@/lib/import-mapping";
 import { FACTORING_IMPORT_CONFIG } from "@/lib/import-configs";
 import { ImportWithMappingDialog } from "@/components/import-with-mapping-dialog";
+import { parseFactoringAdvanceSchedule } from "@/lib/factoring/parse-advance-schedule";
 
 // --- Types ---
 
@@ -34,8 +34,9 @@ type InvoiceRecord = {
     invoiceAmount: number;
     reserveAmount: number;
     transactionFee: number;
-    proratedPrimeWire: number;
-    totalFactoringCost: number;
+    factoringFeeShare: number; // allocated share of period "Other Charges"
+    totalFactoringCost: number; // transactionFee + factoringFeeShare
+    advance: number; // invoice "Total" (net advance/check amount)
     brokerName?: string;
 };
 
@@ -45,16 +46,19 @@ type LoadGroup = {
     status: 'matched' | 'unmatched';
     invoices: InvoiceRecord[];
     totalInvoiceAmount: number;
+    totalTransactionFee: number;
+    totalFactoringFee: number;
     totalFactoringCost: number;
     totalAdvance: number;
+    totalReserveAmount: number;
     /** Optional broker/shipper name from CSV. */
     brokerName?: string;
 };
 
 type GlobalStats = {
     totalScheduleAmount: number;
-    totalPrimeRate: number;
-    totalWireFee: number;
+    totalTransactionFees: number;
+    totalOtherCharges: number;
     matchedLoadsCount: number;
     unmatchedLoadsCount: number;
     totalCost: number;
@@ -84,6 +88,15 @@ export default function FactoringPage() {
     const [isImportInfoOpen, setIsImportInfoOpen] = useState(false);
     const [factoringImportParsed, setFactoringImportParsed] = useState<ParsedFile | null>(null);
     const [factoringMappingDialogOpen, setFactoringMappingDialogOpen] = useState(false);
+    const [periodChargesPreview, setPeriodChargesPreview] = useState<
+        Array<{
+            periodFrom: string;
+            periodTo: string;
+            chargeDate: string;
+            description: string;
+            amount: number;
+        }>
+    >([]);
 
     // Fetch History
     useEffect(() => {
@@ -133,13 +146,14 @@ export default function FactoringPage() {
         if (!file) return;
         setProcessing(true);
         try {
-            const parsed = await parseUploadedFile(file);
+            const parsed = await parseFactoringAdvanceSchedule(file);
             if (parsed.rows.length === 0) {
                 setImportInfo({ title: "No data", description: "No rows found in the file.", variant: "error" });
                 setIsImportInfoOpen(true);
                 return;
             }
             setFactoringImportParsed(parsed);
+            setPeriodChargesPreview([]);
             setFactoringMappingDialogOpen(true);
         } catch (err: any) {
             setImportInfo({
@@ -162,40 +176,85 @@ export default function FactoringPage() {
         const str = (v: unknown) => (v != null ? String(v).trim() : "");
         const num = (v: unknown) => (v != null && v !== "" ? parseFloat(String(v).replace(/[$,\s]/g, "")) || 0 : 0);
 
-        const invoicesToProcess: any[] = [];
+        // Split the parsed rows into:
+        // - Invoice rows (linked by invoiceId)
+        // - Period other-charge rows (not linked to invoiceId)
+        const invoicesRaw: Array<{
+            blockIndex: number;
+            periodFrom: string;
+            periodTo: string;
+            invoiceId: string;
+            invoiceDate: string;
+            invoiceAmount: number;
+            reserveAmount: number;
+            transactionFee: number;
+            advance: number;
+            brokerName?: string;
+        }> = [];
+        const otherChargesRaw: Array<{
+            blockIndex: number;
+            periodFrom: string;
+            periodTo: string;
+            chargeDate: string;
+            description: string;
+            amount: number;
+        }> = [];
+
         const loadMappingCsv = new Map<string, string>();
-        let primeFee = 0;
-        let wireFee = 0;
-        let totalScheduleAmount = 0;
 
         for (const row of rows) {
-            const r = row as Record<string, unknown>;
-            const invId = str(get(r, "invoiceNumber"));
-            if (!invId) continue;
-            const loadNum = str(get(r, "loadNumber"));
-            if (loadNum) loadMappingCsv.set(invId, loadNum);
+            const r = row as Record<string, unknown> & {
+                __rowKind?: unknown;
+                __blockIndex?: unknown;
+                __periodFrom?: unknown;
+                __periodTo?: unknown;
+            };
 
-            const amount = num(get(r, "invoiceAmount"));
-            const advance = num(get(r, "advanceAmount"));
-            const fee = num(get(r, "transactionFee"));
-            const rowPrime = num(get(r, "primeSurcharge"));
-            const rowWire = num(get(r, "wireFee"));
-            if (rowPrime > 0) primeFee += rowPrime;
-            if (rowWire > 0) wireFee += rowWire;
+            const kind = String(r.__rowKind ?? "");
+            const blockIndex = Number(r.__blockIndex ?? 0);
+            const periodFrom = String(r.__periodFrom ?? "");
+            const periodTo = String(r.__periodTo ?? "");
 
-            invoicesToProcess.push({
-                invoiceId: invId,
-                date: str(get(r, "invoiceDate")) || new Date().toLocaleDateString(),
-                amount,
-                reserve: amount - advance - fee,
-                fee,
-                advance,
-                brokerName: str(get(r, "brokerName")) || undefined,
-            });
-            totalScheduleAmount += amount;
+            if (kind === "invoice") {
+                const invoiceId = str(get(r, "invoiceNumber"));
+                if (!invoiceId) continue;
+
+                const loadNum = str(get(r, "loadNumber"));
+                if (loadNum) loadMappingCsv.set(invoiceId, loadNum);
+
+                invoicesRaw.push({
+                    blockIndex,
+                    periodFrom,
+                    periodTo,
+                    invoiceId,
+                    invoiceDate: str(get(r, "invoiceDate")) || new Date().toLocaleDateString(),
+                    invoiceAmount: num(get(r, "invoiceAmount")),
+                    reserveAmount: num(get(r, "reserveAmount")),
+                    transactionFee: num(get(r, "transactionFee")),
+                    advance: num(get(r, "total")),
+                    brokerName: str(get(r, "brokerName")) || undefined,
+                });
+            } else if (kind === "otherCharge") {
+                const chargeDate = str(get(r, "chargeDate"));
+                const description = str(get(r, "chargeDescription"));
+                const amount = num(get(r, "chargeAmount"));
+
+                // Only keep rows that look like real charge lines
+                // (skip empty rows; skip summary row later by description match).
+                if (!description && amount === 0) continue;
+
+                otherChargesRaw.push({
+                    blockIndex,
+                    periodFrom,
+                    periodTo,
+                    chargeDate,
+                    description,
+                    amount,
+                });
+            }
         }
 
-        if (invoicesToProcess.length === 0) {
+        if (invoicesRaw.length === 0) {
             setImportInfo({
                 title: "CSV Error",
                 description: "No valid invoices found. Map 'Invoice Number' to a column with data.",
@@ -206,20 +265,96 @@ export default function FactoringPage() {
             return;
         }
 
+        // Compute per-invoice allocation for each block:
+        // allocatedOther = (invoiceAmount / blockInvoiceTotal) * blockOtherChargesTotal
+        const invoicesByBlock = new Map<number, typeof invoicesRaw>();
+        for (const inv of invoicesRaw) {
+            const list = invoicesByBlock.get(inv.blockIndex) ?? [];
+            list.push(inv);
+            invoicesByBlock.set(inv.blockIndex, list);
+        }
+
+        const chargesByBlock = new Map<number, typeof otherChargesRaw>();
+        for (const ch of otherChargesRaw) {
+            const list = chargesByBlock.get(ch.blockIndex) ?? [];
+            list.push(ch);
+            chargesByBlock.set(ch.blockIndex, list);
+        }
+
+        const periodChargesForHistory = otherChargesRaw
+            .filter((c) => {
+                const d = (c.description || "").toLowerCase();
+                // Exclude the summary line like "Other Charges:".
+                return !d.includes("other charges");
+            })
+            .map((c) => ({
+                periodFrom: c.periodFrom,
+                periodTo: c.periodTo,
+                chargeDate: c.chargeDate,
+                description: c.description,
+                amount: Number(c.amount),
+            }));
+
+        setPeriodChargesPreview(periodChargesForHistory);
+
+        const invoiceCalcs: InvoiceRecord[] = [];
+        let totalScheduleAmount = 0;
+        let totalTransactionFees = 0;
+        let totalOtherCharges = 0;
+
+        for (const [blockIndex, blockInvoices] of invoicesByBlock.entries()) {
+            const blockInvoiceTotal = blockInvoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0);
+            const blockCharges = chargesByBlock.get(blockIndex) ?? [];
+
+            const blockOtherChargesTotal = blockCharges.reduce((sum, ch) => {
+                const desc = (ch.description || "").toLowerCase();
+                const isSummary = desc.includes("other charges");
+                return isSummary ? sum : sum + (ch.amount || 0);
+            }, 0);
+
+            totalOtherCharges += blockOtherChargesTotal;
+
+            for (const inv of blockInvoices) {
+                const factoringFeeShare =
+                    blockInvoiceTotal > 0 ? (inv.invoiceAmount / blockInvoiceTotal) * blockOtherChargesTotal : 0;
+
+                const totalFactoringCost = inv.transactionFee + factoringFeeShare;
+
+                invoiceCalcs.push({
+                    invoiceId: inv.invoiceId,
+                    invoiceDate: inv.invoiceDate,
+                    invoiceAmount: inv.invoiceAmount,
+                    reserveAmount: inv.reserveAmount,
+                    transactionFee: inv.transactionFee,
+                    factoringFeeShare,
+                    totalFactoringCost,
+                    advance: inv.advance,
+                    brokerName: inv.brokerName,
+                });
+
+                totalScheduleAmount += inv.invoiceAmount;
+                totalTransactionFees += inv.transactionFee;
+            }
+        }
+
         setFactoringImportParsed(null);
-        await buildPreviewData(invoicesToProcess, loadMappingCsv, primeFee, wireFee, totalScheduleAmount);
+        await buildPreviewData(invoiceCalcs, loadMappingCsv, {
+            totalScheduleAmount,
+            totalTransactionFees,
+            totalOtherCharges,
+        });
     };
 
     // Shared generic function for building the UI from either PDF OR CSV Array!
     const buildPreviewData = async (
-        invoices: any[],
+        invoices: InvoiceRecord[],
         loadMapping: Map<string, string>,
-        primeFee: number,
-        wireFee: number,
-        totalScheduleAmount: number
+        totals: {
+            totalScheduleAmount: number;
+            totalTransactionFees: number;
+            totalOtherCharges: number;
+        }
     ) => {
-        const totalOtherCharges = primeFee + wireFee;
-
         // 3. Query Firestore
         toast({ title: "Matching Loads...", description: "Querying database for matches." });
 
@@ -264,11 +399,6 @@ export default function FactoringPage() {
 
             const effectiveLoadNumber = foundLoad ? foundLoad.loadNumber : (agLoadNum || `Unknown (${inv.invoiceId})`);
 
-            const proratedOther = totalScheduleAmount > 0
-                ? (inv.amount / totalScheduleAmount) * totalOtherCharges
-                : 0;
-            const totalCost = inv.fee + proratedOther;
-
             if (!loadsMap.has(effectiveLoadNumber)) {
                 loadsMap.set(effectiveLoadNumber, {
                     loadNumber: effectiveLoadNumber,
@@ -276,8 +406,11 @@ export default function FactoringPage() {
                     status: foundLoad ? 'matched' : 'unmatched',
                     invoices: [],
                     totalInvoiceAmount: 0,
+                    totalTransactionFee: 0,
+                    totalFactoringFee: 0,
                     totalFactoringCost: 0,
                     totalAdvance: 0,
+                    totalReserveAmount: 0,
                     brokerName: (inv as any).brokerName || undefined,
                 });
             }
@@ -286,26 +419,31 @@ export default function FactoringPage() {
             if ((inv as any).brokerName && !group.brokerName) group.brokerName = (inv as any).brokerName;
             group.invoices.push({
                 invoiceId: inv.invoiceId,
-                invoiceDate: inv.date,
-                invoiceAmount: inv.amount,
-                reserveAmount: inv.reserve,
-                transactionFee: inv.fee,
-                proratedPrimeWire: proratedOther,
-                totalFactoringCost: totalCost,
+                invoiceDate: inv.invoiceDate,
+                invoiceAmount: inv.invoiceAmount,
+                reserveAmount: inv.reserveAmount,
+                transactionFee: inv.transactionFee,
+                factoringFeeShare: inv.factoringFeeShare,
+                totalFactoringCost: inv.totalFactoringCost,
+                advance: inv.advance,
                 brokerName: (inv as any).brokerName,
             });
-            group.totalInvoiceAmount += inv.amount;
-            group.totalFactoringCost += totalCost;
-            group.totalAdvance += (inv.advance !== undefined ? inv.advance : (inv.amount - inv.reserve - inv.fee));
+
+            group.totalInvoiceAmount += inv.invoiceAmount;
+            group.totalTransactionFee += inv.transactionFee;
+            group.totalFactoringFee += inv.factoringFeeShare;
+            group.totalFactoringCost += inv.totalFactoringCost;
+            group.totalAdvance += inv.advance;
+            group.totalReserveAmount += inv.reserveAmount;
         }
 
         const finalPreviewData = Array.from(loadsMap.values());
 
         setPreviewData(finalPreviewData);
         setStats({
-            totalScheduleAmount,
-            totalPrimeRate: primeFee,
-            totalWireFee: wireFee,
+            totalScheduleAmount: totals.totalScheduleAmount,
+            totalTransactionFees: totals.totalTransactionFees,
+            totalOtherCharges: totals.totalOtherCharges,
             matchedLoadsCount: finalPreviewData.filter(g => g.status === 'matched').length,
             unmatchedLoadsCount: finalPreviewData.filter(g => g.status === 'unmatched').length,
             totalCost: finalPreviewData.reduce((acc, curr) => acc + curr.totalFactoringCost, 0)
@@ -338,8 +476,13 @@ export default function FactoringPage() {
                     const loadRef = doc(firestore, `companies/${companyId}/loads`, record.loadId);
 
                     const updateData: Record<string, unknown> = {
-                        factoringFee: Number(record.totalFactoringCost.toFixed(2)),
+                        // Split costs into:
+                        // - transactionFee: invoice-row transaction fees
+                        // - factoringFee: allocated share of period "Other Charges"
+                        factoringFee: Number(record.totalFactoringFee.toFixed(2)),
+                        transactionFee: Number(record.totalTransactionFee.toFixed(2)),
                         advance: Number(record.totalAdvance.toFixed(2)),
+                        reserveAmount: Number(record.totalReserveAmount.toFixed(2)),
                     };
                     if (record.brokerName?.trim()) {
                         updateData.brokerName = record.brokerName.trim();
@@ -357,7 +500,8 @@ export default function FactoringPage() {
             await setDoc(historyRef, {
                 createdAt: serverTimestamp(),
                 stats,
-                previewData
+                previewData,
+                periodCharges: periodChargesPreview,
             });
 
             setImportInfo({
@@ -370,6 +514,7 @@ export default function FactoringPage() {
             // Reset
             setPreviewData([]);
             setStats(null);
+            setPeriodChargesPreview([]);
 
         } catch (error) {
             console.error(error);
@@ -473,12 +618,12 @@ export default function FactoringPage() {
                                         <CardContent className="p-4 pt-0"><div className="text-2xl font-bold">{formatCurrency(stats.totalScheduleAmount)}</div></CardContent>
                                     </Card>
                                     <Card>
-                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Prime Surcharge</CardTitle></CardHeader>
-                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalPrimeRate)}</div></CardContent>
+                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Transaction Fees</CardTitle></CardHeader>
+                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalTransactionFees)}</div></CardContent>
                                     </Card>
                                     <Card>
-                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Wire Fee</CardTitle></CardHeader>
-                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalWireFee)}</div></CardContent>
+                                        <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Other Charges</CardTitle></CardHeader>
+                                        <CardContent className="p-4 pt-0"><div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.totalOtherCharges)}</div></CardContent>
                                     </Card>
                                     <Card>
                                         <CardHeader className="p-4 pb-2"><CardTitle className="text-sm font-medium text-destructive/80">Total Factoring Cost</CardTitle></CardHeader>
@@ -545,7 +690,7 @@ export default function FactoringPage() {
                                                                             <TableHead className="h-9 py-1 text-xs min-w-[100px]">Broker Name</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Amount</TableHead>
                                                                             <TableHead className="h-9 py-1 text-xs text-right">Txn Fee</TableHead>
-                                                                            <TableHead className="h-9 py-1 text-xs text-right">Share of Primer/Wire</TableHead>
+                                                                            <TableHead className="h-9 py-1 text-xs text-right">Share of Other Charges</TableHead>
                                                                         </TableRow>
                                                                     </TableHeader>
                                                                     <TableBody>
@@ -557,7 +702,7 @@ export default function FactoringPage() {
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.invoiceAmount)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right">{formatCurrency(inv.transactionFee)}</TableCell>
                                                                                 <TableCell className="py-2 text-sm text-right text-muted-foreground">
-                                                                                    {formatCurrency(inv.proratedPrimeWire)}
+                                                                                    {formatCurrency(inv.factoringFeeShare)}
                                                                                 </TableCell>
                                                                             </TableRow>
                                                                         ))}
