@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, Clock } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronRight, Clock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -870,8 +870,8 @@ export default function FactoringPage() {
                             </div>
                         ) : (
                             <div className="flex items-center gap-2 text-blue-700 bg-blue-50 border border-blue-100 rounded-md p-3">
-                                <Loader2 className="h-5 w-5" />
-                                <span className="text-sm font-medium">Info</span>
+                                <Info className="h-5 w-5" />
+                                <span className="text-sm font-medium">Ready for review</span>
                             </div>
                         )}
                     </div>

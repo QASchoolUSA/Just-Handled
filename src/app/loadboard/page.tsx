@@ -80,7 +80,7 @@ export default function LoadboardPage() {
 
   // All Loads: search, sort, pagination
   const [loadSearch, setLoadSearch] = useState('');
-  type LoadSortKey = 'loadNumber' | 'pickupLocation' | 'deliveryLocation' | 'truckId' | 'miles' | 'invoiceAmount';
+  type LoadSortKey = 'loadNumber' | 'loadDate' | 'pickupLocation' | 'deliveryLocation' | 'truckId' | 'miles' | 'invoiceAmount';
   const [loadSortBy, setLoadSortBy] = useState<LoadSortKey>('loadNumber');
   const [loadSortDir, setLoadSortDir] = useState<'asc' | 'desc'>('desc');
   const [loadPage, setLoadPage] = useState(1);
@@ -179,6 +179,12 @@ export default function LoadboardPage() {
         case 'loadNumber':
           cmp = String(a.loadNumber ?? '').localeCompare(String(b.loadNumber ?? ''), undefined, { numeric: true });
           break;
+        case 'loadDate': {
+          const aDate = parseDateAny(a.pickupDate || a.deliveryDate).getTime();
+          const bDate = parseDateAny(b.pickupDate || b.deliveryDate).getTime();
+          cmp = aDate - bDate;
+          break;
+        }
         case 'pickupLocation':
           cmp = String(a.pickupLocation ?? '').localeCompare(String(b.pickupLocation ?? ''));
           break;
@@ -561,6 +567,12 @@ export default function LoadboardPage() {
                           </button>
                         </TableHead>
                         <TableHead className="font-semibold px-4 py-3 min-w-[200px]">
+                          <button type="button" onClick={() => handleLoadSort('loadDate')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Load Date
+                            {loadSortBy === 'loadDate' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
+                          </button>
+                        </TableHead>
+                        <TableHead className="font-semibold px-4 py-3 min-w-[200px]">
                           <button type="button" onClick={() => handleLoadSort('pickupLocation')} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
                             Pickup Location
                             {loadSortBy === 'pickupLocation' ? (loadSortDir === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />) : null}
@@ -595,7 +607,7 @@ export default function LoadboardPage() {
                     <TableBody>
                       {paginatedLoads.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
+                          <TableCell colSpan={7} className="h-48 text-center text-muted-foreground">
                             {searchFilteredLoads.length === 0 && loadSearch.trim()
                               ? 'No loads match that Load #.'
                               : 'No loads found.'}
@@ -605,6 +617,9 @@ export default function LoadboardPage() {
                         paginatedLoads.map((load) => (
                           <TableRow key={load.id} className="hover:bg-muted/30 transition-colors">
                             <TableCell className="px-4 py-3 font-medium">#{load.loadNumber}</TableCell>
+                            <TableCell className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                              {load.pickupDate || load.deliveryDate || '-'}
+                            </TableCell>
                             <TableCell className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />

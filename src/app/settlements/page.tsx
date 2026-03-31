@@ -1533,7 +1533,9 @@ export default function SettlementsPage() {
         <DialogContent className="sm:max-w-xs flex flex-col items-center justify-center space-y-4 py-8 focus:outline-none" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">Importing</DialogTitle>
           <Loader2 className="h-10 w-10 text-primary animate-spin" />
-          <p className="text-lg font-medium text-center">Importing Expenses...</p>
+          <p className="text-lg font-medium text-center">
+            {activeImportKind === 'expenses' ? 'Importing Expenses...' : 'Importing Loads...'}
+          </p>
           <p className="text-sm text-muted-foreground text-center">Please wait while we process the file.</p>
         </DialogContent>
       </Dialog>

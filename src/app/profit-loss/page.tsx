@@ -21,12 +21,27 @@ import {
 import { Bar, BarChart, XAxis, YAxis, Cell } from "recharts";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useCompany } from "@/firebase/provider";
-import { collection, query, where } from "firebase/firestore";
+import { collection } from "firebase/firestore";
 import type { Load, Expense, Driver, Owner } from "@/lib/types";
 import { useSettlementCalculations } from "@/hooks/use-settlement-calculations";
 import { DateRange } from "react-day-picker";
 import { computeProfitLossMetrics } from "@/lib/financial/compute-profit-loss";
 import { exportProfitLossPdf } from "@/lib/exports/statement-pdf-exports";
+import { parseISO, parse, isWithinInterval } from "date-fns";
+
+function parseDateAny(dateStr: string) {
+    if (!dateStr) return new Date();
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+        const iso = parseISO(dateStr);
+        if (!Number.isNaN(iso.getTime())) return iso;
+    }
+    const candidates = ['M/d/yy', 'M/d/yyyy', 'MM/dd/yy', 'MM/dd/yyyy', 'dd-MMM-yy', 'yyyy-MM-dd'];
+    for (const fmt of candidates) {
+        const d = parse(dateStr, fmt, new Date());
+        if (!Number.isNaN(d.getTime())) return d;
+    }
+    return new Date(dateStr);
+}
 
 export default function ProfitLossPage() {
     const firestore = useFirestore();
@@ -59,25 +74,14 @@ export default function ProfitLossPage() {
 
     const loadsQuery = useMemoFirebase(() => {
         if (!firestore || !companyId) return null;
-        if (fromStr && toStr) {
-            return query(
-                collection(firestore, `companies/${companyId}/loads`),
-                where('deliveryDate', '>=', fromStr),
-                where('deliveryDate', '<=', toStr)
-            );
-        }
+        // Fetch full set and filter client-side with robust date parsing.
+        // Some records use non-ISO dates, which break lexicographic where() filters.
         return collection(firestore, `companies/${companyId}/loads`);
     }, [firestore, companyId, fromStr, toStr]);
 
     const expensesQuery = useMemoFirebase(() => {
         if (!firestore || !companyId) return null;
-        if (fromStr && toStr) {
-            return query(
-                collection(firestore, `companies/${companyId}/expenses`),
-                where('date', '>=', fromStr),
-                where('date', '<=', toStr + 'T23:59:59.999Z')
-            );
-        }
+        // Fetch full set and filter client-side with robust date parsing.
         return collection(firestore, `companies/${companyId}/expenses`);
     }, [firestore, companyId, fromStr, toStr]);
 
@@ -95,14 +99,32 @@ export default function ProfitLossPage() {
     const filteredLoads = useMemo(() => {
         if (!loads) return [];
         if (!fromStr || !toStr) return loads;
-        return loads.filter(l => l.deliveryDate >= fromStr && l.deliveryDate <= toStr);
-    }, [loads, fromStr, toStr]);
+        const from = dateRange?.from ?? startOfDay(subMonths(new Date(), 1));
+        const to = dateRange?.to ?? endOfDay(new Date());
+        return loads.filter((l) => {
+            try {
+                const d = parseDateAny(l.deliveryDate || l.pickupDate || '');
+                return isWithinInterval(d, { start: from, end: to });
+            } catch {
+                return false;
+            }
+        });
+    }, [loads, fromStr, toStr, dateRange]);
 
     const filteredExpenses = useMemo(() => {
         if (!expenses) return [];
         if (!fromStr || !toStr) return expenses;
-        return expenses.filter(e => e.date >= fromStr && e.date <= toStr);
-    }, [expenses, fromStr, toStr]);
+        const from = dateRange?.from ?? startOfDay(subMonths(new Date(), 1));
+        const to = dateRange?.to ?? endOfDay(new Date());
+        return expenses.filter((e) => {
+            try {
+                const d = parseDateAny(e.date || '');
+                return isWithinInterval(d, { start: from, end: to });
+            } catch {
+                return false;
+            }
+        });
+    }, [expenses, fromStr, toStr, dateRange]);
 
     // --- Calculations ---
     const driverMap = useMemo(() => new Map(drivers?.map((d) => [d.id, d])), [drivers]);
